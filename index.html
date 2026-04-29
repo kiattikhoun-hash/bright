@@ -1,0 +1,1270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+<title>Workflow App</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<style>
+:root{color-scheme:light;--bg:#f6f7f9;--panel:#fff;--border:#e6e8ec;--border-soft:#eef0f3;--text:#1a1d23;--text-2:#5b6370;--text-3:#8b94a3;--accent:#4f46e5;--accent-soft:#eef2ff;--green:#10b981;--green-soft:#d1fae5;--amber:#f59e0b;--amber-soft:#fef3c7;--red:#ef4444;--red-soft:#fee2e2;--blue:#3b82f6;--blue-soft:#dbeafe;--purple:#8b5cf6;--purple-soft:#ede9fe;--pink:#ec4899;--pink-soft:#fce7f3;--gray-soft:#f1f3f5;--shadow-sm:0 1px 2px rgba(16,24,40,.04);--radius:14px}
+*{box-sizing:border-box}html,body{margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
+.app{display:flex;min-height:100vh}
+.sidebar{width:232px;background:var(--panel);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh;flex-shrink:0;display:flex;flex-direction:column}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;border-bottom:1px solid var(--border-soft);margin-bottom:14px}
+.brand-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#4f46e5,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.brand-name{font-weight:700;font-size:15px}.brand-sub{font-size:11px;color:var(--text-3)}
+.nav-item{display:flex;align-items:center;gap:11px;padding:9px 10px;margin-bottom:2px;border-radius:9px;cursor:pointer;color:var(--text-2);font-weight:500;font-size:13.5px;user-select:none;transition:background .15s,color .15s}
+.nav-item:hover{background:var(--gray-soft);color:var(--text)}.nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.nav-item svg{width:17px;height:17px}
+.nav-section{font-size:11px;text-transform:uppercase;color:var(--text-3);font-weight:600;padding:12px 10px 6px;letter-spacing:.04em}
+.sidebar-footer{margin-top:auto;padding:12px 8px 0;border-top:1px solid var(--border-soft);display:flex;align-items:center;gap:10px}
+.avatar{width:30px;height:30px;border-radius:50%;background:linear-gradient(135deg,#f59e0b,#ef4444);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:12px}
+.main{flex:1;min-width:0;display:flex;flex-direction:column}
+.topbar{background:var(--panel);border-bottom:1px solid var(--border);padding:14px 24px;display:flex;align-items:center;gap:16px;position:sticky;top:0;z-index:20}
+.topbar-title{font-size:18px;font-weight:700}.topbar-sub{font-size:12px;color:var(--text-3);margin-top:2px}
+.topbar-actions{margin-left:auto;display:flex;gap:8px;align-items:center}
+.search{position:relative;display:flex;align-items:center;background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:6px 10px 6px 32px;width:240px}
+.search input{border:none;outline:none;background:transparent;width:100%;font-size:13px;color:var(--text)}
+.search svg{position:absolute;left:10px;width:14px;height:14px;color:var(--text-3)}
+.content{padding:22px 24px 80px}
+.btn{display:inline-flex;align-items:center;gap:6px;padding:8px 14px;border-radius:9px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--border);background:var(--panel);color:var(--text);transition:all .15s}
+.btn:hover{background:var(--gray-soft)}.btn-primary{background:var(--accent);color:#fff;border-color:var(--accent)}.btn-primary:hover{background:#4338ca}
+.btn svg{width:14px;height:14px}
+.kpi-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:14px;margin-bottom:22px}
+.kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;box-shadow:var(--shadow-sm)}
+.kpi-label{font-size:12px;color:var(--text-3);font-weight:500}.kpi-value{font-size:22px;font-weight:700;margin-top:4px}
+.kpi-delta{font-size:12px;margin-top:4px;display:inline-flex;align-items:center;gap:3px}.kpi-delta.up{color:var(--green)}.kpi-delta.down{color:var(--red)}
+.kpi-icon{width:36px;height:36px;border-radius:10px;display:flex;align-items:center;justify-content:center;float:right;margin-left:12px}.kpi-icon svg{width:18px;height:18px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);margin-bottom:18px;overflow:hidden;box-shadow:var(--shadow-sm)}
+.panel-head{padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.panel-title{font-weight:700;font-size:14px}.panel-sub{font-size:12px;color:var(--text-3)}
+.panel-body{padding:14px 18px}.panel-body.tight{padding:0}
+.tbl-wrap{overflow-x:auto;max-height:600px}
+table.tbl{width:100%;border-collapse:collapse;font-size:13px}
+table.tbl th{text-align:left;font-weight:600;color:var(--text-2);padding:10px 14px;background:var(--gray-soft);border-bottom:1px solid var(--border-soft);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;position:sticky;top:0;z-index:1}
+table.tbl td{padding:11px 14px;border-bottom:1px solid var(--border-soft);vertical-align:middle}
+table.tbl tr:hover td{background:#fafbfc}
+.thumb{width:64px;height:64px;border-radius:8px;background:linear-gradient(135deg,var(--accent-soft),var(--purple-soft));display:flex;align-items:center;justify-content:center;font-weight:700;font-size:18px;color:var(--accent);flex-shrink:0;border:1px solid var(--border-soft)}
+.cust-cell{display:flex;align-items:center;gap:10px}.cust-name{font-weight:600}.cust-proj{font-size:11.5px;color:var(--text-3)}
+.badge{display:inline-flex;align-items:center;padding:3px 8px;border-radius:6px;font-size:11.5px;font-weight:600;white-space:nowrap}
+.badge-check{background:var(--gray-soft);color:var(--text-2)}.badge-sample{background:var(--purple-soft);color:var(--purple)}.badge-prod{background:var(--blue-soft);color:var(--blue)}.badge-deliv{background:var(--amber-soft);color:var(--amber)}.badge-inv{background:var(--pink-soft);color:var(--pink)}.badge-done{background:var(--green-soft);color:var(--green)}
+.filter-bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-left:auto}
+.chip{padding:6px 11px;border-radius:8px;background:var(--bg);border:1px solid var(--border);font-size:12.5px;font-weight:500;cursor:pointer;user-select:none;color:var(--text-2)}
+.chip:hover{background:var(--gray-soft)}.chip.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.chip .count{opacity:.75;margin-left:4px;font-size:11px}
+.modal-bg{position:fixed;inset:0;background:rgba(15,23,42,.45);backdrop-filter:blur(4px);display:none;align-items:center;justify-content:center;z-index:100;padding:20px}
+.modal-bg.show{display:flex}
+.modal{background:var(--panel);border-radius:16px;width:100%;max-width:640px;max-height:90vh;overflow-y:auto;box-shadow:0 20px 50px rgba(15,23,42,.25)}
+.modal-head{padding:18px 22px;border-bottom:1px solid var(--border-soft);display:flex;justify-content:space-between;align-items:center}
+.modal-title{font-weight:700;font-size:16px}.modal-close{cursor:pointer;color:var(--text-3);font-size:22px;line-height:1;padding:4px}
+.modal-body{padding:18px 22px}.modal-foot{padding:14px 22px;border-top:1px solid var(--border-soft);display:flex;gap:8px;justify-content:flex-end}
+.field{margin-bottom:14px}.field label{display:block;font-size:12px;font-weight:600;color:var(--text-2);margin-bottom:5px}
+.field .helper{font-size:11px;color:var(--text-3);margin-top:4px}
+.field input,.field select,.field textarea{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:8px;font-size:13.5px;background:var(--panel);color:var(--text);outline:none;font-family:inherit}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
+.field input[readonly],.field select[disabled]{background:var(--gray-soft);color:var(--text-2)}
+.field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.note-box{background:var(--accent-soft);border:1px solid #c7d2fe;border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--accent);margin-bottom:14px}
+.formula-box{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:12px 14px;font-size:12.5px;margin-bottom:14px;color:#92400e;line-height:1.6}
+.formula-box code{background:#fef3c7;padding:1px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#78350f}
+.calc-row{display:flex;justify-content:space-between;padding:4px 0;font-size:12.5px}.calc-divider{border-top:1px dashed var(--border);margin:6px 0}
+.signature-pair{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.sig-box{border:1.5px dashed var(--border);border-radius:9px;padding:16px 12px;text-align:center;font-size:12px;color:var(--text-3);cursor:pointer}
+.sig-box.signed{border-style:solid;background:var(--green-soft);border-color:var(--green);color:var(--green);font-weight:600}
+.charts-grid{display:grid;grid-template-columns:1.4fr 1fr;gap:16px}
+.chart-box{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px;box-shadow:var(--shadow-sm)}
+.chart-box h3{font-size:13px;font-weight:700;margin:0 0 4px}.chart-box p{font-size:12px;color:var(--text-3);margin:0 0 12px}
+.chart-canvas-wrap{position:relative;height:240px}
+.delivery-card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:16px 18px;margin-bottom:12px}
+.delivery-head{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:14px}
+.delivery-track{font-size:11px;color:var(--text-3);font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.delivery-name{font-weight:700;font-size:15px;margin-top:2px}
+.stage-track{display:flex;align-items:center;gap:0}
+.stage{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
+.stage:not(:last-child)::after{content:"";position:absolute;top:13px;left:50%;right:-50%;height:2px;background:var(--border);z-index:0}
+.stage.done:not(:last-child)::after{background:var(--green)}
+.stage-dot{width:26px;height:26px;border-radius:50%;background:var(--gray-soft);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;z-index:1;font-size:12px}
+.stage.done .stage-dot{background:var(--green);border-color:var(--green);color:#fff}
+.stage.active .stage-dot{background:var(--amber);border-color:var(--amber);color:#fff}
+.stage-label{font-size:10.5px;font-weight:600;color:var(--text-2)}.stage-time{font-size:10px;color:var(--text-3)}
+.mobile-tabbar{display:none}
+@media(max-width:880px){.sidebar{display:none}.topbar{padding:12px 14px}.topbar-title{font-size:15px}.search{display:none}.content{padding:14px 12px 90px}.charts-grid{grid-template-columns:1fr}.field-row,.field-row-3{grid-template-columns:1fr}.panel-head{padding:12px 14px;gap:8px}.panel-body{padding:12px 14px}table.tbl th,table.tbl td{padding:8px 12px;font-size:12.5px}.filter-bar{width:100%;overflow-x:auto;flex-wrap:nowrap;padding-bottom:4px}.chip{white-space:nowrap}.kpi-value{font-size:19px}.kpi{padding:14px}
+.mobile-tabbar{display:flex;position:fixed;bottom:0;left:0;right:0;background:var(--panel);border-top:1px solid var(--border);padding:6px 0 calc(6px + env(safe-area-inset-bottom));z-index:30;box-shadow:0 -2px 12px rgba(15,23,42,.05)}
+.tab-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px;padding:6px 4px;color:var(--text-3);font-size:10.5px;font-weight:600;cursor:pointer}
+.tab-item svg{width:19px;height:19px}.tab-item.active{color:var(--accent)}.hide-mobile{display:none!important}}
+.deadline-cell{display:flex;flex-direction:column;gap:2px}.deadline-cell .days{font-size:11px;font-weight:600}
+.days-ok{color:var(--green)}.days-warn{color:var(--amber)}.days-late{color:var(--red)}
+.empty{text-align:center;padding:40px 20px;color:var(--text-3);font-size:13px}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:200}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
+@media(max-width:880px){.toast{bottom:80px}}
+.admin-only{display:none!important}
+body.admin-unlocked .nav-item.admin-only{display:flex!important}
+body.admin-unlocked .tab-item.admin-only{display:flex!important}
+.admin-lock-badge{display:inline-flex;align-items:center;padding:2px 6px;background:var(--amber-soft);color:var(--amber);border-radius:4px;font-size:10px;font-weight:700;margin-left:6px}
+body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--green)}
+
+.sig-canvas-wrap{position:relative}
+.sig-canvas{width:100%;height:90px;border:1.5px dashed var(--border);border-radius:9px;background:#fff;cursor:crosshair;touch-action:none;display:block}
+.sig-canvas.signed{border-style:solid;border-color:var(--green)}
+.sig-meta{display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:11.5px;color:var(--text-3)}
+.sig-clear{cursor:pointer;color:var(--accent);font-weight:600;background:none;border:none;font-size:11.5px;padding:2px 6px}
+.sig-clear:hover{text-decoration:underline}
+.photo-wrap{display:flex;flex-direction:column;gap:8px}
+.photo-preview{max-width:100%;max-height:200px;border-radius:9px;border:1px solid var(--border);object-fit:contain;background:#fafafa}
+.photo-actions{display:flex;gap:8px;flex-wrap:wrap}
+.photo-btn{display:inline-flex;align-items:center;gap:6px;padding:8px 12px;background:var(--bg);border:1px dashed var(--border);border-radius:9px;font-size:12.5px;font-weight:600;cursor:pointer;color:var(--text-2);user-select:none}
+.photo-btn:hover{background:var(--gray-soft);color:var(--text)}
+.photo-btn input{display:none}
+.task-photo{width:64px;height:64px;border-radius:8px;object-fit:cover;flex-shrink:0;border:1px solid var(--border-soft);cursor:pointer}
+.cp-ready{background:var(--green-soft);border:1px solid var(--green);color:var(--green);padding:10px 12px;border-radius:9px;font-size:12.5px;margin-top:10px;display:flex;align-items:center;gap:8px;font-weight:600}
+.cp-ready button{margin-left:auto}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="brand"><div class="brand-logo">W</div><div><div class="brand-name">Workflow</div><div class="brand-sub">kiattikhoun@gmail.com</div></div></div>
+    <div class="nav-section">Modules</div>
+    <div class="nav-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
+    <div class="nav-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Follow-up Tasks</div>
+    <div class="nav-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Product Price</div>
+    <div class="nav-item admin-only" data-view="statement"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>Financial Statement</div>
+    <div class="nav-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
+    <div class="nav-item" data-view="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Admin / Reports<span class="admin-lock-badge" id="admin-lock-status">🔒</span></div>
+    <div class="nav-section">Reference</div>
+    <div class="nav-item" data-view="customers"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>Customers</div>
+    <div class="nav-item" data-view="team"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>Team</div>
+    <div class="sidebar-footer"><div class="avatar">K</div><div style="font-size:12px;"><div style="font-weight:600;">kiatti</div><div style="color:var(--text-3);font-size:11px;">Admin</div></div></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div><div class="topbar-title" id="page-title">Dashboard</div><div class="topbar-sub" id="page-sub">Tuesday, April 28, 2026</div></div>
+      <div class="topbar-actions">
+        <div class="search hide-mobile"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg><input id="search-input" placeholder="Search projects, customers..." /></div>
+        <button class="btn btn-primary" id="header-add-btn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>New Task</button>
+      </div>
+    </header>
+    <div class="content" id="content"></div>
+  </main>
+</div>
+<nav class="mobile-tabbar">
+  <div class="tab-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
+  <div class="tab-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Tasks</div>
+  <div class="tab-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Prices</div>
+  <div class="tab-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
+  <div class="tab-item" data-view="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Admin</div>
+  </nav>
+<div class="modal-bg" id="modal-bg"><div class="modal" id="modal"><div class="modal-head"><div class="modal-title" id="modal-title">New</div><div class="modal-close" id="modal-close">&times;</div></div><div class="modal-body" id="modal-body"></div><div class="modal-foot" id="modal-foot"></div></div></div>
+<div class="toast" id="toast"></div>
+<script>
+// ============================================================
+// SUPABASE CONFIGURATION — fill in 2 values from your Supabase project
+// (Project Settings → API → URL and anon public key)
+// ============================================================
+const SUPABASE_URL  = "https://gogbqhensaundsshvehl.supabase.co";
+const SUPABASE_KEY  = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvZ2JxaGVuc2F1bmRzc2h2ZWhsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc0MTAxNjksImV4cCI6MjA5Mjk4NjE2OX0.mn5okC4X_eSTC993kgHstcW30Cbtdd4KsExYDJU1SwY";
+const supa = window.supabase ? window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY) : null;
+const USE_SUPABASE = supa && SUPABASE_URL.indexOf("YOUR_PROJECT") === -1;
+
+const SEED = {"T":[{"i":"93bd22cd","p":"Paninta","c":"Easy Gold","r":"Pin","d":"Size:35*24mm","u":120.0,"pr":6.5,"s":950.0,"st":"Production","dt":"2026-05-07","hp":true,"hf":true,"ps":true,"as":false},{"i":"583cc1b7","p":"Paninta","c":"BCEL-kt","r":"Tumbler","u":200.0,"pr":16.5,"s":200.0,"st":"Production","dt":"2026-04-30","du":"2026-04-30","hp":true,"hf":true,"ps":true,"as":true},{"i":"f465b880","p":"Paninta","c":"BCEL-kt","r":"Book","d":"Size:15*10cm","u":200.0,"pr":8.5,"s":450.0,"st":"Production","dt":"2026-04-30","hp":true,"hf":true,"ps":true,"as":true},{"i":"d234b22f","p":"Paninta","c":"PTM","r":"Landyard","u":100.0,"pr":15.5,"s":200.0,"st":"Sample","dt":"2026-04-30","hp":true,"hf":true,"ps":false,"as":false},{"i":"67089f1c","p":"Paninta","c":"BCEL-kt","r":"Tote bag","d":"Size:40*30*12cm","u":200.0,"pr":14.5,"s":100.0,"st":"Delivery","dt":"2026-04-28","du":"2026-04-28","hp":true,"hf":true,"ps":true,"as":true},{"i":"c459540e","p":"Paninta","c":"Stock","r":"Bao khao","d":"Size:60*100cm","u":3310.0,"pr":1.5,"st":"Delivery","dt":"2026-04-28","du":"2026-04-28","hp":true,"hf":true,"ps":true,"as":true},{"i":"4923af99","p":"Paninta","c":"KPG","r":"Pin","d":"Size:2.5*2.8","u":100.0,"pr":6.5,"s":400.0,"st":"Sample","dt":"2026-04-26","hp":true,"hf":true,"ps":false,"as":false},{"i":"d01356fc","p":"Paninta","c":"KPG","r":"Pin","d":"Size:2.5*2.8","u":100.0,"pr":6.5,"st":"Sample","dt":"2026-04-26","hp":true,"hf":true,"ps":false,"as":false},{"i":"323b9760","p":"Paninta","c":"E&E","r":"Landyard","u":100.0,"s":200.0,"st":"Sample","dt":"2026-04-25","hp":true,"hf":true,"ps":false,"as":false},{"i":"d55834d4","p":"Paninta","c":"IB","r":"\u0e8a\u0ec8\u0ead\u0e87","d":"\u0e8a\u0ec8\u0ead\u0e87 10.5*22cm , \u0e81\u0eb2\u0e94\u0e94\u0ec9\u0eb2\u0e99\u0ec3\u0e9919*21cm","u":2000.0,"pr":11.5,"s":1300.0,"st":"Delivery","dt":"2026-04-15","du":"2026-04-15","hp":true,"hf":true,"ps":true,"as":true},{"i":"b0125adc","p":"Paninta","c":"LDB","r":"\u0ec0\u0ead\u0e95\u0eb4\u0ec1\u0e81\u0eb1\u0e94","d":"Size:15x7cm","u":4500.0,"pr":0.17,"st":"Delivery","dt":"2026-04-15","du":"2026-04-15","hp":true,"hf":true,"ps":true,"as":true},{"i":"c242b84f","p":"Paninta","c":"LDB","r":"\u0ec0\u0ead\u0e95\u0eb4\u0ec1\u0e81\u0eb1\u0e94","d":"Size:15x7cm","u":2000.0,"pr":0.17,"st":"Delivery","dt":"2026-04-15","dl":"2026-04-15","hp":true,"hf":true,"ps":true,"as":true}],"P":[{"i":"9de24253","dt":"2026-01-23","c":"Beerlao","r":"Ice Bucket","u":20000.0,"s":0.0,"pd":11.0,"lg":3.0,"ry":3200.0,"sp":79000.0,"st":"Done"},{"i":"98713496","dt":"2025-12-12","c":"unitel","r":"Parasol","u":500.0,"s":300.0,"pd":120.0,"lg":10.0,"ry":3200.0,"sp":700000.0,"st":"Done"},{"i":"6350b9a1","dt":"2026-01-13","c":"unitel","r":"Helmet","u":800.0,"s":482.0,"pd":45.5,"lg":2.0,"ry":3200.0,"sp":380000.0,"st":"Done"},{"i":"926d7806","dt":"2026-01-24","c":"LDB","r":"Ice Box","u":289.0,"s":0.0,"pd":280.0,"lg":0.0,"ry":3200.0,"sp":920000.0,"st":"Done"},{"i":"29381520","dt":"2025-08-25","c":"unitel","r":"Folded Umbrella","u":2500.0,"s":100.0,"pd":15.0,"lg":1.0,"ry":3200.0,"sp":100000.0,"st":"Invoice"},{"i":"b88f341e","dt":"2026-03-26","c":"CSC","r":"Tea Mug","u":1000.0,"s":500.0,"pd":40.0,"lg":1.0,"ry":3250.0,"sp":230000.0,"st":"Invoice"},{"i":"af9dda62","dt":"2025-08-25","c":"unitel","r":"Umbrella","u":2000.0,"s":100.0,"pd":16.5,"lg":1.0,"ry":3200.0,"sp":100000.0,"st":"Invoice"},{"i":"8f113fcc","dt":"2025-12-18","c":"unitel","r":"Book set","u":1000.0,"s":200.0,"pd":30.0,"lg":2.65,"ry":3200.0,"sp":170000.0,"st":"Invoice"},{"i":"ce9efd11","dt":"2026-01-15","c":"Sepon","r":"Vest","u":252.0,"s":200.0,"pd":80.0,"lg":25.0,"ry":3200.0,"sp":590000.0,"st":"Invoice"},{"i":"9a35d4d8","dt":"2026-01-13","c":"unitel","r":"Tumbler","u":1000.0,"s":160.0,"pd":21.5,"lg":1.5,"ry":3200.0,"sp":145000.0,"st":"Invoice"},{"i":"8a0f1673","dt":"2026-02-07","c":"Khaivai","r":"Kor jia","u":510.0,"s":0.0,"pd":17.0,"lg":0.0,"ry":3300.0,"sp":280000.0,"st":"Invoice"},{"i":"1eee5d42","dt":"2026-01-30","c":"CSC","r":"Grift set","u":350.0,"s":550.0,"pd":45.0,"lg":25.0,"ry":3200.0,"sp":300000.0,"st":"Invoice"}],"D":[{"tracking":"974956280","product":"Amplify Book","gzStatus":"Shipped","gzTime":"2026-04-20","planeStatus":null,"planeTime":null,"laoStatus":"Delivery","laoTime":"2026-04-20","status":"Delivery to Lao","dueDate":"2026-04-25"},{"tracking":"JYM800114787297","product":"Sticker fin","gzStatus":"Shipped","gzTime":"2026-04-21","planeStatus":null,"planeTime":null,"laoStatus":"Delivery","laoTime":"2026-04-21","status":"Delivery to Lao","dueDate":"2026-04-26"}]};
+// Decompress: T=tasks, P=prices, D=deliveries
+const TKM = {i:'id',p:'pic',c:'customer',r:'project',d:'description',u:'unit',pr:'price',s:'sample',st:'status',dt:'date',du:'dueDate',dl:'deadline',hp:'hasPhoto',hf:'hasCPForm',ps:'picSign',as:'approveSign'};
+const PKM = {i:'id',dt:'date',c:'customer',r:'project',u:'unit',s:'sample',pd:'production',lg:'logistic',ry:'rateYuan',sp:'sellPrice',st:'status'};
+const expand = (rec, kmap) => Object.fromEntries(Object.entries(rec).map(([k,v]) => [kmap[k]||k, v]));
+
+const STORAGE_KEY = 'workflow_app_v1';
+let TASKS     = [];
+let PRICES    = [];
+let DLV       = [];
+let STATEMENT = []; // dashboard summary rows from the `statement` Supabase view
+
+async function loadAll() {
+  if (USE_SUPABASE) {
+    try {
+      const [t, p, d, c, tm, s] = await Promise.all([
+        supa.from('follow_up_tasks').select('*, customers(name), team_members(name)').order('date', {ascending:false}),
+        supa.from('product_prices').select('*, customers(name)').order('date', {ascending:false}),
+        supa.from('deliveries').select('*').order('created_at', {ascending:false}),
+        supa.from('customers').select('name').order('name', {ascending:true}),
+        supa.from('team_members').select('name').order('name', {ascending:true}),
+        supa.from('statement').select('id,date,month,customer,project,unit,status,revenue_kip,profit_kip').order('date', {ascending:false}),
+      ]);
+      if (s && s.error) console.warn('[supabase] statement view missing — run statement-view.sql', s.error.message);
+      STATEMENT = (s && s.data || []).map(r => ({
+        id: r.id, date: r.date, month: r.month,
+        customer: r.customer || '—', project: r.project,
+        unit: r.unit, status: r.status,
+        revenue: +r.revenue_kip || 0,
+        profit:  +r.profit_kip  || 0,
+      }));
+      CUSTOMERS = (c.data || []).map(r => r.name).filter(Boolean);
+      const remoteTeam = (tm.data || []).map(r => r.name).filter(Boolean);
+      if (remoteTeam.length) TEAM = remoteTeam;
+      TASKS = (t.data || []).map(r => ({
+        id: r.id, project: r.project, description: r.description,
+        unit: r.unit, price: r.price_yuan, sample: r.sample_yuan,
+        status: r.status, date: r.date, dueDate: r.due_date, deadline: r.deadline,
+        customer: r.customers && r.customers.name, pic: r.team_members && r.team_members.name,
+        photoData: r.photo_url, picSigData: r.pic_sig_url, approveSigData: r.approve_sig_url,
+        picSign: !!r.pic_sig_url, approveSign: !!r.approve_sig_url,
+        hasPhoto: !!r.photo_url, hasCPForm: !!r.cp_form_url
+      }));
+      PRICES = (p.data || []).map(r => ({
+        id: r.id, project: r.project, unit: r.unit,
+        production: r.production_yuan, sample: r.sample_yuan, logistic: r.logistic_yuan,
+        rateYuan: r.rate_yuan, sellPrice: r.sell_kip, status: r.status, date: r.date,
+        customer: r.customers && r.customers.name
+      }));
+      DLV = (d.data || []).map(r => ({
+        tracking: r.tracking, product: r.product,
+        gzStatus: r.gz_status, gzTime: r.gz_time,
+        planeStatus: r.plane_status, planeTime: r.plane_time,
+        laoStatus: r.lao_status, laoTime: r.lao_time,
+        status: r.status, dueDate: r.due_date
+      }));
+      console.log('[supabase] loaded', TASKS.length, 'tasks,', PRICES.length, 'prices,', DLV.length, 'deliveries');
+    } catch(e) {
+      console.error('[supabase] load failed', e);
+      showToast('Connection error — check Supabase URL/key in source');
+    }
+  } else {
+    // Fallback: localStorage + seed
+    let saved = null;
+    try { const raw = localStorage.getItem(STORAGE_KEY); if (raw) saved = JSON.parse(raw); } catch(e) {}
+    TASKS  = saved ? saved.tasks  : SEED.T.map(t => expand(t, TKM));
+    PRICES = saved ? saved.prices : SEED.P.map(p => expand(p, PKM));
+    DLV    = saved ? saved.dlv    : JSON.parse(JSON.stringify(SEED.D));
+    CUSTOMERS = [...new Set([...TASKS.map(t=>t.customer),...PRICES.map(p=>p.customer)].filter(Boolean))].sort();
+  }
+  if (!STATEMENT.length) STATEMENT = deriveStatement(PRICES);
+}
+
+// Derive what the `statement` Supabase view would return, from a PRICES array.
+// Used as a fallback when the view is missing or when running offline.
+function deriveStatement(rows) {
+  return rows.map(p => {
+    const c = calcProfit(p);
+    return {
+      id: p.id, date: p.date, month: (p.date || '').slice(0, 7),
+      customer: p.customer || '—', project: p.project,
+      unit: p.unit, status: p.status,
+      revenue: c.totalRevenue, profit: c.totalProfit,
+    };
+  });
+}
+
+async function addCustomer(name) {
+  name = (name || '').trim();
+  if (!name) return false;
+  if (CUSTOMERS.includes(name)) return true;
+  if (USE_SUPABASE) {
+    const { error } = await supa.from('customers').insert({ name });
+    if (error) { showToast('Add customer failed: ' + error.message); return false; }
+  }
+  CUSTOMERS.push(name); CUSTOMERS.sort();
+  return true;
+}
+
+async function removeCustomer(name) {
+  if (!name) return false;
+  if (USE_SUPABASE) {
+    const { error } = await supa.from('customers').delete().eq('name', name);
+    if (error) { showToast('Remove failed: ' + error.message); return false; }
+  }
+  CUSTOMERS = CUSTOMERS.filter(c => c !== name);
+  return true;
+}
+
+async function addTeamMember(name) {
+  name = (name || '').trim();
+  if (!name) return false;
+  if (TEAM.includes(name)) return true;
+  if (USE_SUPABASE) {
+    const { error } = await supa.from('team_members').insert({ name });
+    if (error) { showToast('Add member failed: ' + error.message); return false; }
+  }
+  TEAM.push(name); TEAM.sort();
+  return true;
+}
+
+async function removeTeamMember(name) {
+  if (!name) return false;
+  if (USE_SUPABASE) {
+    const { error } = await supa.from('team_members').delete().eq('name', name);
+    if (error) { showToast('Remove failed: ' + error.message); return false; }
+  }
+  TEAM = TEAM.filter(p => p !== name);
+  return true;
+}
+
+function refreshDatalist(id, items) {
+  const dl = document.getElementById(id);
+  if (!dl) return;
+  dl.innerHTML = items.map(v => `<option value="${(v||'').replace(/"/g,'&quot;')}">`).join('');
+}
+
+async function removeNamedCustomer(inputId) {
+  const inp = document.getElementById(inputId || 'f-cust');
+  if (!inp) return;
+  const name = (inp.value || '').trim();
+  if (!name) { showToast('Type or pick a customer first'); return; }
+  if (!CUSTOMERS.includes(name)) { showToast(`"${name}" is not in the customer list`); return; }
+  if (!window.confirm(`Remove customer "${name}"?`)) return;
+  const ok = await removeCustomer(name);
+  if (!ok) return;
+  inp.value = '';
+  refreshDatalist('cust-dl', CUSTOMERS);
+  refreshDatalist('pcust-dl', CUSTOMERS);
+  showToast('Customer removed: ' + name);
+}
+
+async function removeNamedPic() {
+  const inp = document.getElementById('f-pic');
+  if (!inp) return;
+  const name = (inp.value || '').trim();
+  if (!name) { showToast('Type or pick a member first'); return; }
+  if (!TEAM.includes(name)) { showToast(`"${name}" is not in the team list`); return; }
+  if (!window.confirm(`Remove team member "${name}"?`)) return;
+  const ok = await removeTeamMember(name);
+  if (!ok) return;
+  inp.value = '';
+  refreshDatalist('pic-dl', TEAM);
+  showToast('Member removed: ' + name);
+}
+
+async function persist() {
+  if (USE_SUPABASE) return; // Supabase persists per-mutation, not in bulk
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify({tasks:TASKS, prices:PRICES, dlv:DLV})); } catch(e) {}
+}
+
+async function saveTaskRemote(data) {
+  if (!USE_SUPABASE) return;
+  const { data: cust } = await supa.from('customers').select('id').eq('name', data.customer).maybeSingle();
+  const { data: pic }  = await supa.from('team_members').select('id').eq('name', data.pic).maybeSingle();
+  const row = {
+    customer_id: cust && cust.id, pic_id: pic && pic.id,
+    project: data.project, description: data.description, unit: data.unit,
+    price_yuan: data.price, sample_yuan: data.sample, status: data.status,
+    date: data.date || null, due_date: data.dueDate || null, deadline: data.deadline || null,
+    photo_url: data.photoData || null, pic_sig_url: data.picSigData || null,
+    approve_sig_url: data.approveSigData || null
+  };
+  const isNew = data.id.startsWith('new_');
+  if (isNew) {
+    const { data: ins, error } = await supa.from('follow_up_tasks').insert(row).select().single();
+    if (error) { showToast('Save failed: '+error.message); return null; }
+    return ins.id;
+  } else {
+    const { error } = await supa.from('follow_up_tasks').update(row).eq('id', data.id);
+    if (error) { showToast('Save failed: '+error.message); return null; }
+    return data.id;
+  }
+}
+
+async function deleteTaskRemote(id) {
+  if (!USE_SUPABASE) return;
+  await supa.from('follow_up_tasks').delete().eq('id', id);
+}
+
+async function savePriceRemote(data) {
+  if (!USE_SUPABASE) return;
+  const { data: cust } = await supa.from('customers').select('id').eq('name', data.customer).maybeSingle();
+  const row = {
+    customer_id: cust && cust.id, project: data.project, unit: data.unit,
+    sample_yuan: data.sample, production_yuan: data.production,
+    logistic_yuan: data.logistic, rate_yuan: data.rateYuan, sell_kip: data.sellPrice,
+    status: data.status, date: data.date || null
+  };
+  const isNew = data.id.startsWith('p_');
+  if (isNew) {
+    const { error } = await supa.from('product_prices').insert(row);
+    if (error) showToast('Save failed: '+error.message);
+  } else {
+    const { error } = await supa.from('product_prices').update(row).eq('id', data.id);
+    if (error) showToast('Save failed: '+error.message);
+  }
+}
+
+async function deletePriceRemote(id) {
+  if (!USE_SUPABASE) return;
+  await supa.from('product_prices').delete().eq('id', id);
+}
+
+async function saveDeliveryRemote(data, originalTracking) {
+  if (!USE_SUPABASE) return;
+  const row = {
+    tracking: data.tracking, product: data.product,
+    gz_status: data.gzStatus || null, gz_time: data.gzTime || null,
+    plane_status: data.planeStatus || null, plane_time: data.planeTime || null,
+    lao_status: data.laoStatus || null, lao_time: data.laoTime || null,
+    status: data.status, due_date: data.dueDate || null
+  };
+  if (originalTracking) {
+    await supa.from('deliveries').update(row).eq('tracking', originalTracking);
+  } else {
+    await supa.from('deliveries').insert(row);
+  }
+}
+
+async function deleteDeliveryRemote(tracking) {
+  if (!USE_SUPABASE) return;
+  await supa.from('deliveries').delete().eq('tracking', tracking);
+}
+
+let TEAM = ["Chai","Paninta","Mon","范冰冰","Mummy"];
+const STATUSES_TASK = ["Check Price","Sample","Production","Delivery","Invoice","Done"];
+const STATUS_BADGE = {"Check Price":"badge-check","Sample":"badge-sample","Production":"badge-prod","Delivery":"badge-deliv","Invoice":"badge-inv","Invoices":"badge-inv","Done":"badge-done"};
+
+PRICES = PRICES.map(p => { if (p.status && TEAM.includes(p.status)) p.status='Done'; if (!p.status) p.status='Invoice'; return p; });
+
+let CUSTOMERS = [...new Set([...TASKS.map(t=>t.customer),...PRICES.map(p=>p.customer)].filter(Boolean))].sort();
+
+const fmtKip = n => "₭"+Math.round(n||0).toLocaleString('en-US');
+const fmtKipShort = n => { const v = Math.abs(n||0); if (v>=1e9) return "₭"+(n/1e9).toFixed(1)+"B"; if (v>=1e6) return "₭"+(n/1e6).toFixed(1)+"M"; if (v>=1e3) return "₭"+(n/1e3).toFixed(0)+"K"; return "₭"+(n||0); };
+const fmtNum = n => (n||0).toLocaleString('en-US');
+const fmtDate = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
+const fmtDateShort = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
+const TODAY = new Date('2026-04-28');
+const daysUntil = s => { if(!s) return null; const d=new Date(s); return Math.round((d-TODAY)/(1000*60*60*24)); };
+const initials = s => (s||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
+
+function calcProfit(p) {
+  const unit = p.unit || 0;
+  const samplePerUnitYuan = unit > 0 ? (p.sample || 0) / unit : 0;
+  const costPerUnitYuan = (p.production || 0) + samplePerUnitYuan + (p.logistic || 0);
+  const rate = p.rateYuan || 0;
+  const costPerUnitKip = costPerUnitYuan * rate;
+  const profitPerUnit = (p.sellPrice || 0) - costPerUnitKip;
+  const totalProfit = profitPerUnit * unit;
+  const totalRevenue = (p.sellPrice || 0) * unit;
+  const margin = totalRevenue > 0 ? (totalProfit / totalRevenue * 100) : 0;
+  return { samplePerUnitYuan, costPerUnitYuan, costPerUnitKip, profitPerUnit, totalProfit, totalRevenue, margin };
+}
+
+let currentView = "tasks";
+let charts = {};
+
+const ADMIN_PIN = "888968";
+let adminUnlocked = false;
+function setView(v) {
+  if ((v === 'dashboard' || v === 'prices' || v === 'admin' || v === 'statement') && !adminUnlocked) { showPinGate(); return; }
+  if (v === 'admin') v = 'dashboard';
+  currentView = v;
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.view === v));
+  document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.view === v));
+  Object.values(charts).forEach(c => c && c.destroy && c.destroy()); charts = {};
+  render();
+}
+function showPinGate() {
+  document.getElementById('page-title').textContent = 'Admin Access';
+  document.getElementById('page-sub').textContent = 'Restricted — Dashboard & Product Price';
+  document.getElementById('header-add-btn').style.display = 'none';
+  document.querySelectorAll('.nav-item, .tab-item').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('[data-view="admin"]').forEach(el => el.classList.add('active'));
+  document.getElementById('content').innerHTML = `
+    <div style="max-width:380px;margin:80px auto 0;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:32px;text-align:center;box-shadow:var(--shadow-sm);">
+      <div style="width:64px;height:64px;border-radius:16px;background:var(--accent-soft);color:var(--accent);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;">
+        <svg style="width:28px;height:28px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+      </div>
+      <h2 style="margin:0 0 4px;font-size:18px;font-weight:700;">Admin Access Required</h2>
+      <p style="margin:0 0 22px;color:var(--text-3);font-size:13px;">Enter PIN to unlock Dashboard &amp; Product Price</p>
+      <input id="pin-input" type="password" inputmode="numeric" maxlength="6" placeholder="••••••" autocomplete="off" style="width:100%;padding:14px;text-align:center;font-size:22px;letter-spacing:8px;border:1px solid var(--border);border-radius:9px;outline:none;font-family:ui-monospace,monospace;background:var(--bg);" onkeydown="if(event.key==='Enter')checkPin()" />
+      <div id="pin-error" style="margin-top:8px;font-size:12px;color:var(--red);min-height:16px;font-weight:500;"></div>
+      <button class="btn btn-primary" style="width:100%;justify-content:center;margin-top:6px;" onclick="checkPin()">Unlock</button>
+    </div>`;
+  setTimeout(() => { const inp=document.getElementById('pin-input'); if (inp) inp.focus(); }, 50);
+}
+function checkPin() {
+  const inp = document.getElementById('pin-input');
+  if (inp.value === ADMIN_PIN) {
+    adminUnlocked = true;
+    document.body.classList.add('admin-unlocked');
+    const badge = document.getElementById('admin-lock-status');
+    if (badge) badge.textContent = '🔓';
+    setView('dashboard');
+    showToast('Admin unlocked');
+  } else {
+    document.getElementById('pin-error').textContent = 'Incorrect PIN';
+    inp.value = ''; inp.focus();
+  }
+}
+function bindNav() {
+  document.querySelectorAll('[data-view]').forEach(el => {
+    el.addEventListener('click', () => setView(el.dataset.view));
+  });
+}
+
+function render() {
+  const doneCount = STATEMENT.filter(r => r.status === 'Done').length;
+  const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
+  document.getElementById('page-title').textContent = titles[currentView][0];
+  document.getElementById('page-sub').textContent  = titles[currentView][1];
+  const addBtn = document.getElementById('header-add-btn');
+  addBtn.style.display = (currentView==='tasks'||currentView==='prices'||currentView==='delivery') ? '' : 'none';
+  const lbl = currentView==='prices'?'New Price':currentView==='delivery'?'New Shipment':'New Task';
+  addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'+lbl;
+  addBtn.onclick = () => currentView==='prices' ? openPriceModal() : currentView==='delivery' ? openDeliveryModal() : openTaskModal();
+  if (currentView==="dashboard") renderDashboard();
+  if (currentView==="tasks")     renderTasks();
+  if (currentView==="prices")    renderPrices();
+  if (currentView==="statement") renderStatement();
+  if (currentView==="delivery")  renderDelivery();
+  if (currentView==="customers") renderCustomers();
+  if (currentView==="team")      renderTeam();
+}
+
+function renderDashboard() {
+  // Pure summary of the Supabase `statement` view. No charts, no extra joins.
+  const totalRev  = STATEMENT.reduce((s,r)=> s + r.revenue, 0);
+  const totalProf = STATEMENT.reduce((s,r)=> s + r.profit,  0);
+  const margin = totalRev>0 ? (totalProf/totalRev*100) : 0;
+
+  const byCust = {};
+  STATEMENT.forEach(r => {
+    const k = r.customer || '—';
+    (byCust[k] = byCust[k] || {revenue:0, profit:0, count:0});
+    byCust[k].revenue += r.revenue;
+    byCust[k].profit  += r.profit;
+    byCust[k].count   += 1;
+  });
+  const custRows = Object.entries(byCust)
+    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.revenue - a.revenue);
+
+  const byMonth = {};
+  STATEMENT.forEach(r => {
+    if (!r.month) return;
+    (byMonth[r.month] = byMonth[r.month] || {revenue:0, profit:0, count:0});
+    byMonth[r.month].revenue += r.revenue;
+    byMonth[r.month].profit  += r.profit;
+    byMonth[r.month].count   += 1;
+  });
+  const monthRows = Object.entries(byMonth)
+    .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.month.localeCompare(a.month));
+
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div></div>
+      <div class="kpi"><div class="kpi-label">Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div></div>
+      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="kpi-label">Entries</div><div class="kpi-value">${STATEMENT.length}</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">From <code>statement</code> view</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${custRows.map(r => `<tr>
+          <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
+          <td class="hide-mobile">${r.count}</td>
+          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
+      </table></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">Most recent first</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Month</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${monthRows.map(r => `<tr>
+          <td><strong>${r.month}</strong></td>
+          <td class="hide-mobile">${r.count}</td>
+          <td>${fmtKipShort(r.revenue)}</td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
+      </table></div></div>
+    </div>`;
+}
+
+function renderStatement() {
+  // All "Done" rows from the statement view = company financial statement.
+  const done = STATEMENT.filter(r => r.status === 'Done');
+  const totalRev  = done.reduce((s,r)=> s + r.revenue, 0);
+  const totalProf = done.reduce((s,r)=> s + r.profit,  0);
+  const margin = totalRev>0 ? (totalProf/totalRev*100) : 0;
+
+  const byCust = {};
+  done.forEach(r => {
+    const k = r.customer || '—';
+    (byCust[k] = byCust[k] || {revenue:0, profit:0, count:0});
+    byCust[k].revenue += r.revenue;
+    byCust[k].profit  += r.profit;
+    byCust[k].count   += 1;
+  });
+  const custRows = Object.entries(byCust)
+    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.revenue - a.revenue);
+
+  const byMonth = {};
+  done.forEach(r => {
+    if (!r.month) return;
+    (byMonth[r.month] = byMonth[r.month] || {revenue:0, profit:0, count:0});
+    byMonth[r.month].revenue += r.revenue;
+    byMonth[r.month].profit  += r.profit;
+    byMonth[r.month].count   += 1;
+  });
+  const monthRows = Object.entries(byMonth)
+    .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.month.localeCompare(a.month));
+
+  const lineItems = done.slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
+
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div></div>
+      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="kpi-label">Completed Jobs</div><div class="kpi-value">${done.length}</div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">Done entries only</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th class="hide-mobile">Jobs</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${custRows.map(r => `<tr>
+          <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
+          <td class="hide-mobile">${r.count}</td>
+          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No completed jobs yet</td></tr>'}</tbody>
+      </table></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">Most recent first</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Month</th><th class="hide-mobile">Jobs</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${monthRows.map(r => `<tr>
+          <td><strong>${r.month}</strong></td>
+          <td class="hide-mobile">${r.count}</td>
+          <td>${fmtKipShort(r.revenue)}</td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No completed jobs yet</td></tr>'}</tbody>
+      </table></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Line Items</div><div class="panel-sub">Every completed job · click to edit in Product Price</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Date</th><th>Customer / Project</th><th class="hide-mobile">Units</th><th>Revenue</th><th>Profit</th></tr></thead>
+        <tbody>${lineItems.map(r => `<tr style="cursor:pointer" onclick="openPriceModal('${r.id}')">
+          <td>${fmtDateShort(r.date)}</td>
+          <td><div class="cust-cell"><div class="thumb">${initials(r.project||r.customer)}</div><div><div class="cust-name">${r.project||'—'}</div><div class="cust-proj">${r.customer||'—'}</div></div></div></td>
+          <td class="hide-mobile">${fmtNum(r.unit)}</td>
+          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">Mark a Product Price entry as Done to see it here</td></tr>'}</tbody>
+      </table></div></div>
+    </div>`;
+}
+
+let tasksFilter = "All", tasksPicFilter = "All";
+function renderTasks() {
+  const sCounts = { All: TASKS.length };
+  STATUSES_TASK.forEach(s => sCounts[s] = TASKS.filter(t => t.status === s).length);
+  let filtered = TASKS.slice();
+  if (tasksFilter!=="All") filtered = filtered.filter(t => t.status === tasksFilter);
+  if (tasksPicFilter!=="All") filtered = filtered.filter(t => t.pic === tasksPicFilter);
+  filtered.sort((a,b) => {
+    const ca = (a.customer||'').toLowerCase(), cb = (b.customer||'').toLowerCase();
+    if (ca !== cb) return ca.localeCompare(cb);
+    return new Date(b.date||0) - new Date(a.date||0);
+  });
+
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Follow-up Tasks</div><div class="panel-sub">Grouped by customer · Source: Follow up work sheet · Price ¥/unit · Sample total ¥</div></div>
+        <div class="filter-bar">
+          <span class="chip ${tasksFilter==='All'?'active':''}" onclick="setTasksFilter('All')">All<span class="count">${sCounts.All}</span></span>
+          ${STATUSES_TASK.map(s => `<span class="chip ${tasksFilter===s?'active':''}" onclick="setTasksFilter('${s}')">${s}<span class="count">${sCounts[s]||0}</span></span>`).join('')}
+        </div>
+      </div>
+      <div class="panel-head" style="border-top:1px solid var(--border-soft);background:#fafbfc;"><div class="panel-sub">PIC:</div>
+        <div class="filter-bar"><span class="chip ${tasksPicFilter==='All'?'active':''}" onclick="setPicFilter('All')">All</span>${TEAM.map(t => `<span class="chip ${tasksPicFilter===t?'active':''}" onclick="setPicFilter('${t}')">${t}</span>`).join('')}</div>
+      </div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Project / Customer</th><th>PIC</th><th class="hide-mobile">Unit</th><th class="hide-mobile">¥/u</th><th class="hide-mobile">Sample¥</th><th>Status</th><th>Date</th><th class="hide-mobile">Files</th></tr></thead>
+        <tbody>
+          ${filtered.map(t => {
+            const dl = daysUntil(t.deadline||t.dueDate);
+            const dlCls = dl===null?'':dl<0?'days-late':dl<=7?'days-warn':'days-ok';
+            const dlTxt = dl===null?'':dl<0?`${Math.abs(dl)}d late`:`${dl}d`;
+            const sigDot = ok => `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${ok?'var(--green)':'var(--border)'};margin-right:3px;"></span>`;
+            return `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')">
+              <td><div class="cust-cell">${t.photoData?`<img src="${t.photoData}" class="task-photo" onclick="event.stopPropagation();showPhotoView('${t.id}')">`:`<div class="thumb">${initials(t.project)}</div>`}<div><div class="cust-name">${t.project||'—'}</div><div class="cust-proj">${t.customer||'—'}${t.description?' · '+t.description:''}</div></div></div></td>
+              <td>${t.pic||'—'}</td><td class="hide-mobile">${fmtNum(t.unit)}</td>
+              <td class="hide-mobile">${t.price?'¥'+t.price:'—'}</td><td class="hide-mobile">${t.sample?'¥'+fmtNum(t.sample):'—'}</td>
+              <td><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status||'—'}</span></td>
+              <td><div class="deadline-cell"><span>${fmtDateShort(t.dueDate)}</span>${dlTxt?`<span class="days ${dlCls}">${dlTxt}</span>`:''}</div></td>
+              <td class="hide-mobile" style="font-size:11px;color:var(--text-2);">${t.hasPhoto?'📷':''}${t.hasCPForm?'📄':''} ${sigDot(t.picSign)}P${sigDot(t.approveSign)}A</td>
+            </tr>`;
+          }).join('') || '<tr><td colspan="8" class="empty">No tasks match</td></tr>'}
+        </tbody></table></div></div></div>`;
+}
+function setTasksFilter(f) { tasksFilter = f; render(); }
+function setPicFilter(p) { tasksPicFilter = p; render(); }
+
+let pricesFilter = "All";
+function renderPrices() {
+  // "Done" entries are hidden from this view
+  const visible = PRICES.filter(p => p.status !== "Done");
+  const pendingTasks = TASKS.filter(t => (t.status==="Invoice"||t.status==="Invoices") && !visible.find(p => p.id===t.id));
+  const sCounts = { All: visible.length, Invoice: visible.filter(p => p.status==="Invoice").length };
+  let filtered = visible.slice();
+  if (pricesFilter==="Invoice") filtered = filtered.filter(p => p.status==="Invoice");
+  filtered.sort((a,b) => new Date(b.date||0) - new Date(a.date||0));
+  const totals = filtered.reduce((acc,p)=>{const c=calcProfit(p);acc.rev+=c.totalRevenue;acc.prof+=c.totalProfit;return acc;},{rev:0,prof:0});
+  const margin = totals.rev>0 ? (totals.prof/totals.rev*100) : 0;
+
+  document.getElementById('content').innerHTML = `
+    <div class="formula-box"><strong>Profit:</strong> <code>profit = ( sellPrice − ( production + sample/unit + logistic ) × rateYuan ) × unit</code><br><span style="font-size:11px;">Production &amp; Logistic in ¥/unit · Sample total ¥ · Sell Price in ₭/unit</span></div>
+    ${pendingTasks.length ? `<div class="panel" style="border-color:#c7d2fe;background:#f5f7ff;"><div class="panel-head" style="background:transparent;"><div><div class="panel-title" style="color:var(--accent);">↪ ${pendingTasks.length} task${pendingTasks.length>1?'s':''} ready to transfer</div><div class="panel-sub">Tasks marked Invoice that need rate, logistic, sell price</div></div></div><div class="panel-body" style="display:flex;flex-wrap:wrap;gap:8px;">${pendingTasks.map(t => `<div onclick="transferTask('${t.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;background:white;border:1px solid var(--border);border-radius:9px;font-size:13px;"><div class="thumb">${initials(t.project)}</div><div><div style="font-weight:600;">${t.project}</div><div style="font-size:11.5px;color:var(--text-3);">${t.customer} · ¥${t.price}/u × ${fmtNum(t.unit)}</div></div><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status}</span></div>`).join('')}</div></div>` : ''}
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-value">${fmtKipShort(totals.rev)}</div></div>
+      <div class="kpi"><div class="kpi-label">Total Profit</div><div class="kpi-value" style="color:${totals.prof>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totals.prof)}</div></div>
+      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="kpi-label">Entries</div><div class="kpi-value">${filtered.length}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Product Price Records</div><div class="panel-sub">Source: Product Price sheet · ${PRICES.length} entries</div></div>
+        <div class="filter-bar"><span class="chip ${pricesFilter==='All'?'active':''}" onclick="setPricesFilter('All')">All<span class="count">${sCounts.All}</span></span><span class="chip ${pricesFilter==='Invoice'?'active':''}" onclick="setPricesFilter('Invoice')">Invoice<span class="count">${sCounts.Invoice}</span></span></div>
+      </div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Date</th><th>Customer / Project</th><th class="hide-mobile">Unit</th><th class="hide-mobile">Prod¥</th><th class="hide-mobile">Sample¥</th><th class="hide-mobile">Logist¥</th><th class="hide-mobile">Rate</th><th>Sell ₭/u</th><th>Profit</th><th>Status</th></tr></thead>
+        <tbody>${filtered.map(p => { const c=calcProfit(p); const sellSet = (p.sellPrice||0)>0; return `<tr style="cursor:pointer" onclick="openPriceModal('${p.id}')">
+          <td>${fmtDateShort(p.date)}</td>
+          <td><div class="cust-cell"><div class="thumb">${initials(p.project)}</div><div><div class="cust-name">${p.project}</div><div class="cust-proj">${p.customer}</div></div></div></td>
+          <td class="hide-mobile">${fmtNum(p.unit)}</td><td class="hide-mobile">${p.production?'¥'+p.production:'—'}</td><td class="hide-mobile">${p.sample?'¥'+fmtNum(p.sample):'—'}</td><td class="hide-mobile">${p.logistic?'¥'+p.logistic:'—'}</td><td class="hide-mobile">${p.rateYuan||'—'}</td>
+          <td><strong>${sellSet?fmtKip(p.sellPrice):'<span style="color:var(--amber);">—</span>'}</strong></td>
+          <td style="color:${sellSet?(c.totalProfit>=0?'var(--green)':'var(--red)'):'var(--text-3)'};font-weight:700;">${sellSet?fmtKipShort(c.totalProfit):'—'}${sellSet?`<div style="font-size:10px;font-weight:500;color:var(--text-3);">${c.margin.toFixed(0)}%</div>`:''}</td>
+          <td><span class="badge ${STATUS_BADGE[p.status]||''}">${p.status}</span></td></tr>`;}).join('') || '<tr><td colspan="10" class="empty">No records</td></tr>'}
+        </tbody></table></div></div>
+    </div>`;
+}
+function setPricesFilter(f) { pricesFilter = f; render(); }
+
+function transferTask(taskId) {
+  const t = TASKS.find(x => x.id===taskId);
+  if (!t) return;
+  if (PRICES.find(p => p.id===taskId)) { showToast('Already in Product Price'); return; }
+  PRICES.unshift({ id:t.id, date:t.date, customer:t.customer, project:t.project, unit:t.unit, sample:t.sample, production:t.price, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' });
+  persist(); showToast(`Transferred "${t.project}"`);
+  render();
+}
+
+function renderDelivery() {
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid">
+      <div class="kpi"><div class="kpi-label">Active Shipments</div><div class="kpi-value">${DLV.length}</div></div>
+      <div class="kpi"><div class="kpi-label">From GZ</div><div class="kpi-value">${DLV.filter(d=>d.gzStatus).length}</div></div>
+      <div class="kpi"><div class="kpi-label">In Lao</div><div class="kpi-value">${DLV.filter(d=>d.laoStatus).length}</div></div>
+      <div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:var(--red);">${DLV.filter(d=>d.dueDate&&daysUntil(d.dueDate)<0).length}</div></div>
+    </div>
+    <div class="panel"><div class="panel-head"><div><div class="panel-title">Active Shipments</div><div class="panel-sub">GZ → Plane → Lao tracking pipeline · Source: Delivery sheet</div></div></div></div>
+    ${DLV.map(d => {
+      const days = daysUntil(d.dueDate);
+      const stages = [{label:'GZ',status:d.gzStatus,time:d.gzTime},{label:'Plane',status:d.planeStatus,time:d.planeTime},{label:'Lao',status:d.laoStatus,time:d.laoTime}];
+      const lastDoneIdx = stages.findIndex(s => !s.status);
+      stages.forEach((s,i) => { if (lastDoneIdx===-1) s.cls='done'; else if (i<lastDoneIdx) s.cls='done'; else if (i===lastDoneIdx) s.cls='active'; else s.cls=''; });
+      return `<div class="delivery-card" onclick="openDeliveryModal('${d.tracking}')" style="cursor:pointer;">
+        <div class="delivery-head"><div><div class="delivery-track">${d.tracking}</div><div class="delivery-name">${d.product}</div></div>
+          <div style="text-align:right;"><div class="badge badge-deliv">${d.status||'—'}</div><div style="font-size:11px;color:var(--text-3);margin-top:4px;">Due ${fmtDateShort(d.dueDate)}${days!==null?` · <span class="days ${days<0?'days-late':days<=3?'days-warn':'days-ok'}">${days<0?Math.abs(days)+'d late':days+'d left'}</span>`:''}</div></div>
+        </div>
+        <div class="stage-track">${stages.map(s => `<div class="stage ${s.cls}"><div class="stage-dot">${s.cls==='done'?'✓':''}</div><div class="stage-label">${s.label}</div><div class="stage-time">${s.status||'—'}</div><div class="stage-time">${s.time?fmtDateShort(s.time):''}</div></div>`).join('')}</div>
+      </div>`;
+    }).join('') || '<div class="panel"><div class="panel-body empty">No active shipments</div></div>'}`;
+}
+
+function renderCustomers() {
+  const stats = CUSTOMERS.map(c => {
+    const tasks = TASKS.filter(t => t.customer===c);
+    const rows = STATEMENT.filter(r => r.customer===c);
+    const rev  = rows.reduce((s,r)=> s + r.revenue, 0);
+    const prof = rows.reduce((s,r)=> s + r.profit,  0);
+    return { name:c, tasks:tasks.length, active:tasks.filter(x=>x.status!=='Done').length, rev, prof };
+  }).sort((a,b)=>b.rev-a.rev);
+  const esc = s => (s||'').replace(/'/g,"\\'");
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">Customers</div><div class="panel-sub">${CUSTOMERS.length} accounts · linked to Customer dropdowns</div></div>
+        <div class="filter-bar"><button class="btn btn-primary" onclick="addCustomerFromRef()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Customer</button></div>
+      </div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th>Tasks</th><th>Active</th><th>Revenue</th><th>Profit</th><th></th></tr></thead>
+        <tbody>${stats.map(s => `<tr>
+          <td><div class="cust-cell"><div class="thumb">${initials(s.name)}</div><div class="cust-name">${s.name}</div></div></td>
+          <td>${s.tasks}</td><td>${s.active}</td>
+          <td><strong>${fmtKipShort(s.rev)}</strong></td>
+          <td style="color:${s.prof>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(s.prof)}</td>
+          <td style="text-align:right;"><button class="btn" title="Remove" onclick="removeCustomerFromRef('${esc(s.name)}')" style="padding:4px 10px;color:var(--red);border-color:var(--red);">🗑</button></td>
+        </tr>`).join('') || '<tr><td colspan="6" class="empty">No customers yet — add one above</td></tr>'}</tbody>
+      </table></div></div>
+    </div>`;
+}
+
+async function addCustomerFromRef() {
+  const name = (window.prompt('Enter new customer name:') || '').trim();
+  if (!name) return;
+  const ok = await addCustomer(name);
+  if (ok) { showToast('Customer added: ' + name); render(); }
+}
+
+async function removeCustomerFromRef(name) {
+  if (!window.confirm(`Remove customer "${name}"?\n(Will fail if any task or price still references it.)`)) return;
+  const ok = await removeCustomer(name);
+  if (ok) { showToast('Customer removed: ' + name); render(); }
+}
+
+function renderTeam() {
+  const stats = TEAM.map(p => { const tasks = TASKS.filter(t => t.pic===p); return { name:p, tasks:tasks.length, open:tasks.filter(t=>t.status!=='Done').length, done:tasks.filter(t=>t.status==='Done').length }; });
+  const esc = s => (s||'').replace(/'/g,"\\'");
+  document.getElementById('content').innerHTML = `
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">Team</div><div class="panel-sub">${TEAM.length} PIC members · linked to PIC dropdowns</div></div>
+        <div class="filter-bar"><button class="btn btn-primary" onclick="addTeamFromRef()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>Add Member</button></div>
+      </div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Name</th><th>Open</th><th>Done</th><th>Total</th><th></th></tr></thead>
+        <tbody>${stats.map(s=>`<tr>
+          <td><div class="cust-cell"><div class="thumb" style="background:linear-gradient(135deg,#fce7f3,#ede9fe);color:var(--purple);">${initials(s.name)}</div><div class="cust-name">${s.name}</div></div></td>
+          <td>${s.open}</td><td>${s.done}</td><td>${s.tasks}</td>
+          <td style="text-align:right;"><button class="btn" title="Remove" onclick="removeTeamFromRef('${esc(s.name)}')" style="padding:4px 10px;color:var(--red);border-color:var(--red);">🗑</button></td>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No team members yet — add one above</td></tr>'}</tbody>
+      </table></div></div>
+    </div>`;
+}
+
+async function addTeamFromRef() {
+  const name = (window.prompt('Enter new team member name:') || '').trim();
+  if (!name) return;
+  const ok = await addTeamMember(name);
+  if (ok) { showToast('Member added: ' + name); render(); }
+}
+
+async function removeTeamFromRef(name) {
+  if (!window.confirm(`Remove team member "${name}"?\n(Will fail if any task still references them.)`)) return;
+  const ok = await removeTeamMember(name);
+  if (ok) { showToast('Member removed: ' + name); render(); }
+}
+
+function openTaskModal(id) {
+  const isEdit = !!id;
+  const t = isEdit ? {...TASKS.find(x=>x.id===id)} : { id:'new_'+Date.now().toString(36), pic:'', customer:'', project:'', description:'', unit:0, price:0, sample:0, status:'Sample', date:'2026-04-28', dueDate:'', deadline:'', picSign:false, approveSign:false, hasPhoto:false, hasCPForm:false };
+  document.getElementById('modal-title').textContent = isEdit ? `Edit · ${t.project}` : 'New Follow-up Task';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="field-row">
+      <div class="field"><label>PIC</label>
+        <div style="display:flex;gap:6px;">
+          <input id="f-pic" list="pic-dl" value="${(t.pic||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
+          <button type="button" class="btn" title="Remove this team member" onclick="removeNamedPic()" style="padding:0 10px;">🗑</button>
+        </div>
+        <datalist id="pic-dl">${TEAM.map(p=>`<option value="${p.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+      </div>
+      <div class="field"><label>Customer</label>
+        <div style="display:flex;gap:6px;">
+          <input id="f-cust" list="cust-dl" value="${(t.customer||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
+          <button type="button" class="btn" title="Remove this customer" onclick="removeNamedCustomer('f-cust')" style="padding:0 10px;">🗑</button>
+        </div>
+        <datalist id="cust-dl">${CUSTOMERS.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+        <div class="helper">Type to search; a new name will be saved as a new customer.</div>
+      </div>
+    </div>
+    <div class="field"><label>Project</label><input id="f-proj" value="${t.project||''}" /></div>
+    <div class="field"><label>Description</label><input id="f-desc" value="${(t.description||'').replace(/"/g,'&quot;')}" placeholder="Material, size, color..." /></div>
+    <div class="field-row-3"><div class="field"><label>Unit</label><input id="f-unit" type="number" value="${t.unit||0}" /></div><div class="field"><label>Price ¥/u</label><input id="f-price" type="number" step="0.01" value="${t.price||0}" /><div class="helper">Production cost in Yuan/unit</div></div><div class="field"><label>Sample ¥</label><input id="f-sample" type="number" value="${t.sample||0}" /><div class="helper">Total batch sample, Yuan</div></div></div>
+    <div class="field-row"><div class="field"><label>Status</label><select id="f-status">${STATUSES_TASK.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Date</label><input id="f-date" type="date" value="${t.date||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>Due Date</label><input id="f-due" type="date" value="${t.dueDate||''}" /></div><div class="field"><label>Deadline</label><input id="f-dl" type="date" value="${t.deadline||''}" /></div></div>
+    <div class="note-box"><strong>Auto-rule:</strong> Setting status to <em>Invoice</em> transfers this to Product Price.</div>
+    <div class="field"><label>Product Photo</label>
+      <div class="photo-wrap">
+        ${t.photoData?`<img src="${t.photoData}" class="photo-preview" id="photo-prev">`:'<div id="photo-prev-empty" style="padding:24px;text-align:center;color:var(--text-3);background:var(--bg);border:1.5px dashed var(--border);border-radius:9px;font-size:12.5px;">No photo uploaded yet</div>'}
+        <div class="photo-actions">
+          <label class="photo-btn">📷 Take Photo<input type="file" accept="image/*" capture="environment" onchange="handlePhotoUpload(this,'camera')"></label>
+          <label class="photo-btn">📁 Upload File<input type="file" accept="image/*" onchange="handlePhotoUpload(this,'file')"></label>
+          <button type="button" class="photo-btn" onclick="handlePhotoUrl()">🔗 From URL</button>
+          ${t.photoData?'<button type="button" class="photo-btn photo-remove-btn" style="color:var(--red);border-color:var(--red);" onclick="clearPhoto()">🗑 Remove</button>':''}
+        </div>
+      </div>
+    </div>
+    <div class="field"><label>Signatures · sign with finger or mouse</label>
+      <div class="signature-pair">
+        <div>
+          <canvas id="sig-pic" class="sig-canvas ${t.picSigData||t.picSign?'signed':''}"></canvas>
+          <div class="sig-meta"><span>PIC Sign${(t.picSigData||t.picSign)?' ✓':''}</span><button type="button" class="sig-clear" onclick="clearSig('pic')">Clear</button></div>
+        </div>
+        <div>
+          <canvas id="sig-approve" class="sig-canvas ${t.approveSigData||t.approveSign?'signed':''}"></canvas>
+          <div class="sig-meta"><span>Approval Sign${(t.approveSigData||t.approveSign)?' ✓':''}</span><button type="button" class="sig-clear" onclick="clearSig('approve')">Clear</button></div>
+        </div>
+      </div>
+      <div id="cp-form-status" style="display:none;" class="cp-ready">
+        <svg style="width:18px;height:18px;flex-shrink:0;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        <span>Both signed — CP Form ready to generate</span>
+        <button type="button" class="btn btn-primary btn-sm" onclick="generateCPForm()">📄 Generate PDF</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('modal-foot').innerHTML = `${isEdit ? '<button class="btn" style="color:var(--red);border-color:var(--red);" onclick="deleteTask(\''+id+'\')">Delete</button>' : ''}<div style="flex:1"></div><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveTask('${t.id}',${isEdit})">Save</button>`;
+  const m = document.getElementById('modal');
+  m.dataset.picSign = t.picSign?'1':'0';
+  m.dataset.approveSign = t.approveSign?'1':'0';
+  m.dataset.picSigData = t.picSigData || '';
+  m.dataset.approveSigData = t.approveSigData || '';
+  m.dataset.photoData = t.photoData || '';
+  document.getElementById('modal-bg').classList.add('show');
+  setTimeout(() => { setupSigPad('sig-pic','pic'); setupSigPad('sig-approve','approve'); updateCPFormStatus(); }, 30);
+}
+
+function setupSigPad(canvasId, kind) {
+  const c = document.getElementById(canvasId);
+  if (!c) return;
+  // Resize canvas to its container size
+  c.width = c.offsetWidth || 280;
+  c.height = c.offsetHeight || 90;
+  const ctx = c.getContext('2d');
+  ctx.lineWidth = 2.2; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  ctx.strokeStyle = '#1a1d23';
+  const m = document.getElementById('modal');
+  const dataKey = kind+'SigData';
+  // Restore prior signature if present
+  if (m.dataset[dataKey]) {
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0, c.width, c.height);
+    img.src = m.dataset[dataKey];
+  }
+  let drawing = false, lastX = 0, lastY = 0;
+  function getPos(e) {
+    const r = c.getBoundingClientRect();
+    const t = e.touches ? e.touches[0] : e;
+    return { x: t.clientX - r.left, y: t.clientY - r.top };
+  }
+  function start(e) { e.preventDefault(); drawing = true; const p = getPos(e); lastX = p.x; lastY = p.y; }
+  function draw(e) {
+    if (!drawing) return; e.preventDefault();
+    const p = getPos(e);
+    ctx.beginPath(); ctx.moveTo(lastX, lastY); ctx.lineTo(p.x, p.y); ctx.stroke();
+    lastX = p.x; lastY = p.y;
+  }
+  function end() {
+    if (!drawing) return; drawing = false;
+    m.dataset[dataKey] = c.toDataURL('image/png');
+    c.classList.add('signed');
+    updateSigUI(kind, true);
+    updateCPFormStatus();
+  }
+  c.addEventListener('mousedown', start); c.addEventListener('mousemove', draw);
+  c.addEventListener('mouseup', end); c.addEventListener('mouseleave', end);
+  c.addEventListener('touchstart', start, {passive:false});
+  c.addEventListener('touchmove', draw, {passive:false});
+  c.addEventListener('touchend', end);
+}
+function updateSigUI(kind, signed) {
+  const meta = document.querySelector(`#sig-${kind}`).parentElement.querySelector('.sig-meta span');
+  if (meta) meta.textContent = (kind==='pic'?'PIC Sign':'Approval Sign') + (signed?' ✓':'');
+}
+function clearSig(kind) {
+  const c = document.getElementById('sig-' + kind);
+  if (!c) return;
+  c.getContext('2d').clearRect(0, 0, c.width, c.height);
+  c.classList.remove('signed');
+  document.getElementById('modal').dataset[kind+'SigData'] = '';
+  updateSigUI(kind, false);
+  updateCPFormStatus();
+}
+function updateCPFormStatus() {
+  const m = document.getElementById('modal');
+  const ok = !!m.dataset.picSigData && !!m.dataset.approveSigData;
+  const box = document.getElementById('cp-form-status');
+  if (box) box.style.display = ok ? 'flex' : 'none';
+}
+function compressImage(img) {
+  const max = 800;
+  let w = img.width, hh = img.height;
+  if (w > max || hh > max) { const r = max / Math.max(w, hh); w *= r; hh *= r; }
+  const cv = document.createElement('canvas');
+  cv.width = w; cv.height = hh;
+  cv.getContext('2d').drawImage(img, 0, 0, w, hh);
+  return cv.toDataURL('image/jpeg', 0.85);
+}
+
+function applyPhotoData(dataUrl) {
+  document.getElementById('modal').dataset.photoData = dataUrl;
+  const wrap = document.querySelector('.photo-wrap');
+  if (!wrap) return;
+  const empty = wrap.querySelector('#photo-prev-empty');
+  if (empty) empty.remove();
+  let prev = wrap.querySelector('#photo-prev');
+  if (!prev) {
+    prev = document.createElement('img');
+    prev.id = 'photo-prev';
+    prev.className = 'photo-preview';
+    wrap.insertBefore(prev, wrap.querySelector('.photo-actions'));
+  }
+  prev.src = dataUrl;
+  const actions = wrap.querySelector('.photo-actions');
+  if (!actions.querySelector('.photo-remove-btn')) {
+    const rm = document.createElement('button');
+    rm.type = 'button'; rm.className = 'photo-btn photo-remove-btn';
+    rm.style.color = 'var(--red)'; rm.style.borderColor = 'var(--red)';
+    rm.onclick = clearPhoto; rm.textContent = '🗑 Remove';
+    actions.appendChild(rm);
+  }
+}
+
+function handlePhotoUpload(input, source) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = e => {
+    const img = new Image();
+    img.onload = () => applyPhotoData(compressImage(img));
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+  input.value = '';
+}
+
+function handlePhotoUrl() {
+  const url = (window.prompt('Paste a direct image URL (.jpg, .png, etc.):') || '').trim();
+  if (!url) return;
+  showToast('Loading photo…');
+  const img = new Image();
+  img.crossOrigin = 'anonymous';
+  img.onload = () => {
+    try {
+      applyPhotoData(compressImage(img));
+      showToast('Photo imported');
+    } catch (e) {
+      // Canvas tainted — host did not return CORS headers
+      showToast('Image host blocks cross-origin — try a different link');
+    }
+  };
+  img.onerror = () => showToast('Could not load image — check the URL');
+  img.src = url;
+}
+function clearPhoto() {
+  document.getElementById('modal').dataset.photoData = '';
+  const wrap = document.querySelector('.photo-wrap');
+  const prev = wrap.querySelector('#photo-prev');
+  if (prev) prev.remove();
+  if (!wrap.querySelector('#photo-prev-empty')) {
+    const div = document.createElement('div');
+    div.id = 'photo-prev-empty';
+    div.style.cssText = 'padding:24px;text-align:center;color:var(--text-3);background:var(--bg);border:1.5px dashed var(--border);border-radius:9px;font-size:12.5px;';
+    div.textContent = 'No photo uploaded yet';
+    wrap.insertBefore(div, wrap.querySelector('.photo-actions'));
+  }
+  const rm = wrap.querySelector('.photo-actions .photo-remove-btn');
+  if (rm) rm.remove();
+}
+function showPhotoView(taskId) {
+  const t = TASKS.find(x => x.id===taskId);
+  if (!t || !t.photoData) return;
+  const w = window.open('', '_blank');
+  if (w) { w.document.write(`<title>${t.project} photo</title><body style="margin:0;background:#000;display:flex;align-items:center;justify-content:center;min-height:100vh;"><img src="${t.photoData}" style="max-width:100%;max-height:100vh;"></body>`); w.document.close(); }
+}
+function generateCPForm() {
+  const m = document.getElementById('modal');
+  const picSig = m.dataset.picSigData || '';
+  const apprSig = m.dataset.approveSigData || '';
+  const photo = m.dataset.photoData || '';
+  const data = {
+    pic: document.getElementById('f-pic').value,
+    customer: document.getElementById('f-cust').value,
+    project: document.getElementById('f-proj').value,
+    description: document.getElementById('f-desc').value,
+    unit: document.getElementById('f-unit').value,
+    price: document.getElementById('f-price').value,
+    sample: document.getElementById('f-sample').value,
+    status: document.getElementById('f-status').value,
+    date: document.getElementById('f-date').value,
+    dueDate: document.getElementById('f-due').value,
+    deadline: document.getElementById('f-dl').value,
+  };
+  const today = new Date().toLocaleDateString('en-US', {year:'numeric', month:'long', day:'numeric'});
+  const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>CP Form — ${data.customer} ${data.project}</title><style>
+*{box-sizing:border-box}body{font-family:-apple-system,BlinkMacSystemFont,Inter,Segoe UI,Roboto,sans-serif;max-width:800px;margin:0 auto;padding:40px 50px;color:#1a1d23;line-height:1.5}
+.print-btn{position:fixed;top:20px;right:20px;padding:10px 16px;background:#4f46e5;color:#fff;border:none;border-radius:8px;font-weight:600;cursor:pointer;font-size:13px;box-shadow:0 4px 12px rgba(0,0,0,.15)}
+.print-btn:hover{background:#4338ca}
+h1{text-align:center;margin:0 0 4px;font-size:22px;letter-spacing:.5px}
+.subtitle{text-align:center;color:#5b6370;font-size:13px;margin-bottom:24px;border-bottom:2px solid #1a1d23;padding-bottom:14px}
+.meta-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;background:#f6f7f9;padding:18px;border-radius:9px;margin-bottom:22px;font-size:13.5px}
+.meta-grid div strong{color:#5b6370;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;display:block;margin-bottom:2px}
+table{width:100%;border-collapse:collapse;margin-bottom:22px;font-size:13.5px}
+th,td{border:1px solid #e6e8ec;padding:10px 12px;text-align:left}
+th{background:#f1f3f5;font-weight:600;color:#5b6370;font-size:11.5px;text-transform:uppercase;letter-spacing:.04em;width:35%}
+.photo-section{margin-bottom:24px}
+.photo-section h3{margin:0 0 8px;font-size:13px;color:#5b6370;text-transform:uppercase;letter-spacing:.04em}
+.photo-section img{max-width:280px;max-height:280px;border:1px solid #e6e8ec;border-radius:9px;display:block}
+.signatures{display:grid;grid-template-columns:1fr 1fr;gap:40px;margin-top:50px;padding-top:30px;border-top:2px solid #1a1d23}
+.sig-block{text-align:center}
+.sig-image{max-width:100%;max-height:90px;display:block;margin:0 auto 8px;border-bottom:1px solid #1a1d23;padding-bottom:8px}
+.sig-block strong{font-size:14px;display:block}
+.sig-block small{color:#5b6370;font-size:11.5px}
+.footer{margin-top:30px;text-align:center;color:#8b94a3;font-size:11px;border-top:1px solid #e6e8ec;padding-top:14px}
+@media print{.print-btn{display:none}body{padding:20px 30px}}
+</style></head><body>
+<button class="print-btn" onclick="window.print()">🖨 Print / Save as PDF</button>
+<h1>Customer Production Form</h1>
+<div class="subtitle">CP Form — Generated ${today}</div>
+<div class="meta-grid">
+  <div><strong>Customer</strong>${data.customer||'—'}</div>
+  <div><strong>Project</strong>${data.project||'—'}</div>
+  <div><strong>PIC</strong>${data.pic||'—'}</div>
+  <div><strong>Status</strong>${data.status||'—'}</div>
+</div>
+<table>
+  <tr><th>Description</th><td>${data.description||'—'}</td></tr>
+  <tr><th>Quantity (Units)</th><td>${(+data.unit||0).toLocaleString()}</td></tr>
+  <tr><th>Unit Price</th><td>¥${data.price||0} / unit</td></tr>
+  <tr><th>Sample Cost (total)</th><td>¥${(+data.sample||0).toLocaleString()}</td></tr>
+  <tr><th>Order Date</th><td>${data.date||'—'}</td></tr>
+  <tr><th>Due Date</th><td>${data.dueDate||'—'}</td></tr>
+  <tr><th>Deadline</th><td>${data.deadline||'—'}</td></tr>
+</table>
+${photo?`<div class="photo-section"><h3>Product Photo</h3><img src="${photo}"></div>`:''}
+<div class="signatures">
+  <div class="sig-block">
+    ${picSig?`<img src="${picSig}" class="sig-image">`:'<div style="height:90px;border-bottom:1px solid #1a1d23;margin-bottom:8px;"></div>'}
+    <strong>${data.pic||'PIC'}</strong>
+    <small>PIC Signature</small>
+  </div>
+  <div class="sig-block">
+    ${apprSig?`<img src="${apprSig}" class="sig-image">`:'<div style="height:90px;border-bottom:1px solid #1a1d23;margin-bottom:8px;"></div>'}
+    <strong>Approver</strong>
+    <small>Approval Signature</small>
+  </div>
+</div>
+<div class="footer">This document was auto-generated by the Workflow App on ${today}</div>
+<script>window.addEventListener('load',()=>setTimeout(()=>window.print(),300));<\/script>
+</body></html>`;
+  const blob = new Blob([html], {type:'text/html'});
+  const url = URL.createObjectURL(blob);
+  const w = window.open(url, '_blank');
+  if (!w) {
+    const a = document.createElement('a');
+    a.href = url; a.download = `CP_Form_${data.customer}_${data.project}.html`.replace(/[^a-zA-Z0-9_.-]/g,'_');
+    document.body.appendChild(a); a.click(); a.remove();
+    showToast('CP Form downloaded — open and print to PDF');
+  } else { showToast('CP Form opened — use Save as PDF in print dialog'); }
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+async function saveTask(id, isEdit) {
+  const m = document.getElementById('modal');
+  const data = { id, pic:(document.getElementById('f-pic').value||'').trim(), customer:(document.getElementById('f-cust').value||'').trim(), project:document.getElementById('f-proj').value, description:document.getElementById('f-desc').value, unit:+document.getElementById('f-unit').value||0, price:+document.getElementById('f-price').value||0, sample:+document.getElementById('f-sample').value||0, status:document.getElementById('f-status').value, date:document.getElementById('f-date').value, dueDate:document.getElementById('f-due').value, deadline:document.getElementById('f-dl').value, picSigData:m.dataset.picSigData||'', approveSigData:m.dataset.approveSigData||'', picSign:!!m.dataset.picSigData||m.dataset.picSign==='1', approveSign:!!m.dataset.approveSigData||m.dataset.approveSign==='1', photoData:m.dataset.photoData||'', hasPhoto:!!m.dataset.photoData||(isEdit?(TASKS.find(t=>t.id===id)?.hasPhoto||false):false), hasCPForm:!!(m.dataset.picSigData&&m.dataset.approveSigData)||(isEdit?(TASKS.find(t=>t.id===id)?.hasCPForm||false):false) };
+  if (!data.project) { showToast('Project name required'); return; }
+  if (data.customer && !CUSTOMERS.includes(data.customer)) await addCustomer(data.customer);
+  if (data.pic && !TEAM.includes(data.pic)) await addTeamMember(data.pic);
+  if (isEdit) { const i=TASKS.findIndex(t=>t.id===id); TASKS[i]=data; } else { TASKS.unshift(data); }
+  if (USE_SUPABASE) { saveTaskRemote(data).then(newId => { if (newId && data.id !== newId) { data.id = newId; render(); } loadAll().then(render); }); }
+  if ((data.status==='Invoice'||data.status==='Invoices') && !PRICES.find(p=>p.id===data.id)) {
+    PRICES.unshift({ id:data.id, date:data.date, customer:data.customer, project:data.project, unit:data.unit, sample:data.sample, production:data.price, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' });
+    showToast('Saved · auto-transferred to Product Price');
+  } else { showToast(isEdit?'Updated':'Created'); }
+  closeModal(); persist(); render();
+}
+
+function deleteTask(id) {
+  if (!confirm('Delete this task?')) return;
+  TASKS = TASKS.filter(t => t.id !== id);
+  PRICES = PRICES.filter(p => p.id !== id);
+  if (USE_SUPABASE) deleteTaskRemote(id);
+  closeModal(); persist(); render(); showToast('Deleted');
+}
+
+function openPriceModal(id) {
+  const isEdit = !!id;
+  const p = isEdit ? {...PRICES.find(x => x.id===id)} : { id:'p_'+Date.now().toString(36), date:'2026-04-28', customer:CUSTOMERS[0]||'', project:'', unit:0, sample:0, production:0, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' };
+  document.getElementById('modal-title').textContent = isEdit ? `Edit Price · ${p.project}` : 'New Price';
+  document.getElementById('modal-body').innerHTML = `
+    ${isEdit ? `<div class="note-box">Auto-transferred from Follow-up. Date, customer, project, unit, production, sample are read-only.</div>`:''}
+    <div class="field-row"><div class="field"><label>Date</label><input id="p-date" type="date" value="${p.date||''}" ${isEdit?'readonly':''} /></div><div class="field"><label>Customer</label>${isEdit
+      ? `<input id="p-cust" value="${(p.customer||'').replace(/"/g,'&quot;')}" readonly />`
+      : `<div style="display:flex;gap:6px;">
+          <input id="p-cust" list="pcust-dl" value="${(p.customer||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
+          <button type="button" class="btn" title="Remove this customer" onclick="removeNamedCustomer('p-cust')" style="padding:0 10px;">🗑</button>
+        </div>
+        <datalist id="pcust-dl">${CUSTOMERS.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>`
+    }</div></div>
+    <div class="field"><label>Project</label><input id="p-proj" value="${(p.project||'').replace(/"/g,'&quot;')}" ${isEdit?'readonly':''} /></div>
+    <div class="field-row-3"><div class="field"><label>Unit</label><input id="p-unit" type="number" value="${p.unit||0}" ${isEdit?'readonly':''} /></div><div class="field"><label>Production ¥/u</label><input id="p-prod" type="number" step="0.01" value="${p.production||0}" ${isEdit?'readonly':''} /></div><div class="field"><label>Sample ¥</label><input id="p-sample" type="number" value="${p.sample||0}" ${isEdit?'readonly':''} /></div></div>
+    <div class="formula-box"><strong>Self-input ↓</strong><br><code>profit = (sell − (production + sample/unit + logistic) × rate) × unit</code></div>
+    <div class="field-row-3"><div class="field"><label>Rate Yuan</label><input id="p-rate" type="number" step="0.01" value="${p.rateYuan||0}" /></div><div class="field"><label>Logistic ¥/u</label><input id="p-log" type="number" step="0.01" value="${p.logistic||0}" /></div><div class="field"><label>Sell ₭/u</label><input id="p-sell" type="number" value="${p.sellPrice||0}" /></div></div>
+    <div class="field"><label>Live Calculation</label><div id="p-calc" style="background:var(--bg);border:1px solid var(--border);border-radius:9px;padding:12px 14px;"></div></div>
+    <div class="field"><label>Status</label><select id="p-status" style="max-width:200px;"><option ${p.status==='Invoice'?'selected':''}>Invoice</option><option ${p.status==='Done'?'selected':''}>Done</option></select></div>`;
+  document.getElementById('modal-foot').innerHTML = `${isEdit ? '<button class="btn" style="color:var(--red);border-color:var(--red);" onclick="deletePrice(\''+id+'\')">Remove</button>' : ''}<div style="flex:1"></div><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="savePrice('${p.id}',${isEdit})">Save</button>`;
+  function updateCalc() {
+    const cur = { unit:+document.getElementById('p-unit').value||0, production:+document.getElementById('p-prod').value||0, sample:+document.getElementById('p-sample').value||0, rateYuan:+document.getElementById('p-rate').value||0, logistic:+document.getElementById('p-log').value||0, sellPrice:+document.getElementById('p-sell').value||0 };
+    const c = calcProfit(cur);
+    document.getElementById('p-calc').innerHTML = `<div class="calc-row"><span>Sample / unit</span><span>¥${cur.sample}÷${cur.unit} = <strong>¥${c.samplePerUnitYuan.toFixed(2)}</strong></span></div><div class="calc-row"><span>Cost / unit (¥)</span><span>${cur.production}+${c.samplePerUnitYuan.toFixed(2)}+${cur.logistic} = <strong>¥${c.costPerUnitYuan.toFixed(2)}</strong></span></div><div class="calc-row"><span>Cost / unit (₭)</span><span>¥${c.costPerUnitYuan.toFixed(2)}×${cur.rateYuan} = <strong>${fmtKip(c.costPerUnitKip)}</strong></span></div><div class="calc-row"><span>Profit / unit</span><span>${fmtKip(cur.sellPrice)} − ${fmtKip(c.costPerUnitKip)} = <strong style="color:${c.profitPerUnit>=0?'var(--green)':'var(--red)'}">${fmtKip(c.profitPerUnit)}</strong></span></div><div class="calc-divider"></div><div class="calc-row" style="font-size:14px;"><span><strong>Total Profit</strong> (${cur.unit} units)</span><strong style="color:${c.totalProfit>=0?'var(--green)':'var(--red)'};font-size:15px;">${fmtKip(c.totalProfit)}</strong></div><div class="calc-row"><span>Margin</span><span style="color:${c.margin>=0?'var(--green)':'var(--red)'};font-weight:600;">${c.margin.toFixed(1)}%</span></div>`;
+  }
+  ['p-unit','p-prod','p-sample','p-rate','p-log','p-sell'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', updateCalc); });
+  updateCalc();
+  document.getElementById('modal-bg').classList.add('show');
+}
+
+async function savePrice(id, isEdit) {
+  const data = { id, date:document.getElementById('p-date').value, customer:(document.getElementById('p-cust').value||'').trim(), project:document.getElementById('p-proj').value, unit:+document.getElementById('p-unit').value||0, sample:+document.getElementById('p-sample').value||0, production:+document.getElementById('p-prod').value||0, logistic:+document.getElementById('p-log').value||0, rateYuan:+document.getElementById('p-rate').value||0, sellPrice:+document.getElementById('p-sell').value||0, status:document.getElementById('p-status').value };
+  if (!isEdit && data.customer && !CUSTOMERS.includes(data.customer)) await addCustomer(data.customer);
+  if (isEdit) { const i = PRICES.findIndex(p => p.id===id); PRICES[i] = data; } else { PRICES.unshift(data); }
+  if (USE_SUPABASE) savePriceRemote(data);
+  closeModal(); persist(); render(); showToast(isEdit?'Updated':'Saved');
+}
+
+function deletePrice(id) { if (!confirm('Remove this entry?')) return; PRICES = PRICES.filter(p => p.id !== id); if (USE_SUPABASE) deletePriceRemote(id); closeModal(); persist(); render(); showToast('Removed'); }
+
+function openDeliveryModal(tracking) {
+  const isEdit = !!tracking;
+  const d = isEdit ? {...DLV.find(x=>x.tracking===tracking)} : { tracking:'', product:'', gzStatus:'', gzTime:'', planeStatus:'', planeTime:'', laoStatus:'', laoTime:'', status:'Delivery', dueDate:'' };
+  document.getElementById('modal-title').textContent = isEdit ? 'Edit Shipment' : 'New Shipment';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="field-row"><div class="field"><label>Tracking #</label><input id="d-trk" value="${d.tracking||''}" /></div><div class="field"><label>Product</label><input id="d-prod" value="${(d.product||'').replace(/"/g,'&quot;')}" /></div></div>
+    <div class="field-row"><div class="field"><label>GZ Status</label><select id="d-gz"><option value="" ${!d.gzStatus?'selected':''}>—</option><option value="Delivery" ${d.gzStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.gzStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>GZ Time</label><input id="d-gzt" type="date" value="${d.gzTime||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>Plane Status</label><select id="d-pl"><option value="" ${!d.planeStatus?'selected':''}>—</option><option value="Delivery" ${d.planeStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.planeStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Plane Time</label><input id="d-plt" type="date" value="${d.planeTime||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>Lao Status</label><select id="d-lao"><option value="" ${!d.laoStatus?'selected':''}>—</option><option value="Delivery" ${d.laoStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.laoStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Lao Time</label><input id="d-laot" type="date" value="${d.laoTime||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>Status</label><select id="d-stat"><option value="Delivery" ${d.status==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.status==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Due Date</label><input id="d-due" type="date" value="${d.dueDate||''}" /></div></div>`;
+  document.getElementById('modal-foot').innerHTML = `${isEdit ? '<button class="btn" style="color:var(--red);border-color:var(--red);" onclick="deleteDelivery(\''+tracking+'\')">Delete</button>' : ''}<div style="flex:1"></div><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDelivery(${isEdit?'\''+tracking+'\'':'null'})">Save</button>`;
+  document.getElementById('modal-bg').classList.add('show');
+}
+
+function saveDelivery(tracking) {
+  const data = { tracking:document.getElementById('d-trk').value, product:document.getElementById('d-prod').value, gzStatus:document.getElementById('d-gz').value, gzTime:document.getElementById('d-gzt').value, planeStatus:document.getElementById('d-pl').value, planeTime:document.getElementById('d-plt').value, laoStatus:document.getElementById('d-lao').value, laoTime:document.getElementById('d-laot').value, status:document.getElementById('d-stat').value, dueDate:document.getElementById('d-due').value };
+  if (tracking) { const i=DLV.findIndex(d=>d.tracking===tracking); DLV[i]=data; } else { DLV.unshift(data); }
+  if (USE_SUPABASE) saveDeliveryRemote(data, tracking);
+  closeModal(); persist(); render(); showToast(tracking?'Updated':'Created');
+}
+
+function deleteDelivery(tracking) { if (!confirm('Delete?')) return; DLV = DLV.filter(d => d.tracking !== tracking); closeModal(); persist(); render(); showToast('Deleted'); }
+
+function closeModal() { document.getElementById('modal-bg').classList.remove('show'); }
+document.getElementById('modal-close').onclick = closeModal;
+document.getElementById('modal-bg').addEventListener('click', e => { if (e.target.id==='modal-bg') closeModal(); });
+function showToast(msg) { const t=document.getElementById('toast'); t.textContent=msg; t.classList.add('show'); clearTimeout(showToast._t); showToast._t=setTimeout(()=>t.classList.remove('show'),2400); }
+document.getElementById('search-input').addEventListener('input', e => { const q = e.target.value.toLowerCase(); if (!q) { render(); return; } if (currentView!=='tasks') setView('tasks'); document.querySelectorAll('table.tbl tbody tr').forEach(tr => { tr.style.display = tr.textContent.toLowerCase().includes(q) ? '' : 'none'; }); });
+
+(async () => {
+  await loadAll();
+  bindNav();
+  setView('tasks');
+  // Realtime subscriptions for multi-device sync
+  if (USE_SUPABASE) {
+    supa.channel('tasks').on('postgres_changes', {event:'*', schema:'public', table:'follow_up_tasks'}, () => loadAll().then(render)).subscribe();
+    supa.channel('prices').on('postgres_changes', {event:'*', schema:'public', table:'product_prices'}, () => loadAll().then(render)).subscribe();
+    supa.channel('dlv').on('postgres_changes', {event:'*', schema:'public', table:'deliveries'}, () => loadAll().then(render)).subscribe();
+  }
+})();
+</script>
+</body>
+</html>
