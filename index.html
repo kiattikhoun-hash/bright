@@ -555,12 +555,21 @@ function renderDashboard() {
     .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
     .sort((a,b) => b.month.localeCompare(a.month));
 
+  // Trend data: last 12 months in chronological order
+  const trend = monthRows.slice().sort((a,b) => a.month.localeCompare(b.month)).slice(-12);
+
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div></div>
       <div class="kpi"><div class="kpi-label">Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div></div>
       <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
       <div class="kpi"><div class="kpi-label">Entries</div><div class="kpi-value">${STATEMENT.length}</div></div>
+    </div>
+
+    <div class="chart-box" style="margin-bottom:18px;">
+      <h3>Monthly Trend</h3>
+      <p>Revenue &amp; profit · last ${trend.length} months</p>
+      <div class="chart-canvas-wrap" style="height:280px;"><canvas id="trend-chart"></canvas></div>
     </div>
 
     <div class="panel">
@@ -590,6 +599,43 @@ function renderDashboard() {
         </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
       </table></div></div>
     </div>`;
+
+  drawTrendChart(trend);
+}
+
+function drawTrendChart(trend) {
+  const el = document.getElementById('trend-chart');
+  if (!el || typeof Chart === 'undefined' || !trend.length) return;
+  const labels = trend.map(t => t.month);
+  const revenue = trend.map(t => Math.round(t.revenue / 1e6));
+  const profit  = trend.map(t => Math.round(t.profit  / 1e6));
+  const ctx = el.getContext('2d');
+  // Soft fills under each line
+  const revFill = ctx.createLinearGradient(0,0,0,260); revFill.addColorStop(0,'rgba(79,70,229,.18)'); revFill.addColorStop(1,'rgba(79,70,229,0)');
+  const profFill= ctx.createLinearGradient(0,0,0,260); profFill.addColorStop(0,'rgba(16,185,129,.20)'); profFill.addColorStop(1,'rgba(16,185,129,0)');
+  charts.trend = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label:'Revenue', data:revenue, borderColor:'#4f46e5', backgroundColor:revFill, borderWidth:2, tension:.35, fill:true, pointRadius:0, pointHoverRadius:4, pointHoverBackgroundColor:'#4f46e5' },
+        { label:'Profit',  data:profit,  borderColor:'#10b981', backgroundColor:profFill, borderWidth:2, tension:.35, fill:true, pointRadius:0, pointHoverRadius:4, pointHoverBackgroundColor:'#10b981' }
+      ]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', align:'end', labels:{ boxWidth:8, boxHeight:8, usePointStyle:true, pointStyle:'circle', font:{ size:12, family:'-apple-system,Inter,sans-serif' }, color:'#5b6370' } },
+        tooltip: { backgroundColor:'#1a1d23', padding:10, displayColors:false, titleFont:{ size:12, weight:'600' }, bodyFont:{ size:12 },
+          callbacks: { label: c => ` ${c.dataset.label}: ₭${c.parsed.y.toLocaleString()}M` } }
+      },
+      scales: {
+        x: { grid:{ display:false }, ticks:{ color:'#8b94a3', font:{ size:11 } }, border:{ display:false } },
+        y: { grid:{ color:'rgba(230,232,236,.6)', drawBorder:false }, ticks:{ color:'#8b94a3', font:{ size:11 }, callback: v => '₭'+v+'M' }, border:{ display:false } }
+      }
+    }
+  });
 }
 
 function renderStatement() {
@@ -771,17 +817,21 @@ function transferTask(taskId) {
 }
 
 function renderDelivery() {
-  const gzpCount = DLV.filter(d => d.gzStatus || d.planeStatus).length;
-  const laoCount = DLV.filter(d => d.laoStatus).length;
+  // Hide deliveries that are fully complete (any stage marked Shipped means it left that point;
+  // when laoStatus is Shipped the package has been delivered out — no longer "active").
+  const isShipped = d => d.gzStatus === 'Shipped' || d.planeStatus === 'Shipped' || d.laoStatus === 'Shipped';
+  const active = DLV.filter(d => !isShipped(d));
+  const gzpCount = active.filter(d => d.gzStatus || d.planeStatus).length;
+  const laoCount = active.filter(d => d.laoStatus).length;
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Active Shipments</div><div class="kpi-value">${DLV.length}</div></div>
+      <div class="kpi"><div class="kpi-label">Active Shipments</div><div class="kpi-value">${active.length}</div></div>
       <div class="kpi"><div class="kpi-label">GZ / Plane</div><div class="kpi-value">${gzpCount}</div></div>
       <div class="kpi"><div class="kpi-label">In Lao</div><div class="kpi-value">${laoCount}</div></div>
-      <div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:var(--red);">${DLV.filter(d=>d.dueDate&&daysUntil(d.dueDate)<0).length}</div></div>
+      <div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:var(--red);">${active.filter(d=>d.dueDate&&daysUntil(d.dueDate)<0).length}</div></div>
     </div>
-    <div class="panel"><div class="panel-head"><div><div class="panel-title">Active Shipments</div><div class="panel-sub">GZ/Plane → Lao tracking pipeline · Source: Delivery sheet</div></div></div></div>
-    ${DLV.map(d => {
+    <div class="panel"><div class="panel-head"><div><div class="panel-title">Active Shipments</div><div class="panel-sub">GZ/Plane → Lao tracking pipeline · Shipped items hidden</div></div></div></div>
+    ${active.map(d => {
       const days = daysUntil(d.dueDate);
       const gzpStatus = d.gzStatus || d.planeStatus || '';
       const gzpTime   = d.gzTime   || d.planeTime   || '';
