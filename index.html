@@ -798,7 +798,6 @@ let pricesFilter = "All";
 function renderPrices() {
   // "Done" entries are hidden from this view
   const visible = PRICES.filter(p => p.status !== "Done");
-  const pendingTasks = TASKS.filter(t => (t.status==="Invoice"||t.status==="Invoices") && !visible.find(p => p.id===t.id));
   const sCounts = { All: visible.length, Invoice: visible.filter(p => p.status==="Invoice").length };
   let filtered = visible.slice();
   if (pricesFilter==="Invoice") filtered = filtered.filter(p => p.status==="Invoice");
@@ -808,7 +807,6 @@ function renderPrices() {
 
   document.getElementById('content').innerHTML = `
     <div class="formula-box"><strong>Profit:</strong> <code>profit = ( sellPrice − ( production + sample/unit + logistic ) × rateYuan ) × unit</code><br><span style="font-size:11px;">Production &amp; Logistic in ¥/unit · Sample total ¥ · Sell Price in ₭/unit</span></div>
-    ${pendingTasks.length ? `<div class="panel" style="border-color:#c7d2fe;background:#f5f7ff;"><div class="panel-head" style="background:transparent;"><div><div class="panel-title" style="color:var(--accent);">↪ ${pendingTasks.length} task${pendingTasks.length>1?'s':''} ready to transfer</div><div class="panel-sub">Tasks marked Invoice that need rate, logistic, sell price</div></div></div><div class="panel-body" style="display:flex;flex-wrap:wrap;gap:8px;">${pendingTasks.map(t => `<div onclick="transferTask('${t.id}')" style="cursor:pointer;display:flex;align-items:center;gap:10px;padding:10px 14px;background:white;border:1px solid var(--border);border-radius:9px;font-size:13px;"><div class="thumb">${initials(t.project)}</div><div><div style="font-weight:600;">${t.project}</div><div style="font-size:11.5px;color:var(--text-3);">${t.customer} · ¥${t.price}/u × ${fmtNum(t.unit)}</div></div><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status}</span></div>`).join('')}</div></div>` : ''}
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-value">${fmtKipShort(totals.rev)}</div></div>
       <div class="kpi"><div class="kpi-label">Total Profit</div><div class="kpi-value" style="color:${totals.prof>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totals.prof)}</div></div>
@@ -832,15 +830,6 @@ function renderPrices() {
     </div>`;
 }
 function setPricesFilter(f) { pricesFilter = f; render(); }
-
-function transferTask(taskId) {
-  const t = TASKS.find(x => x.id===taskId);
-  if (!t) return;
-  if (PRICES.find(p => p.id===taskId)) { showToast('Already in Product Price'); return; }
-  PRICES.unshift({ id:t.id, date:t.date, customer:t.customer, project:t.project, unit:t.unit, sample:t.sample, production:t.price, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' });
-  persist(); showToast(`Transferred "${t.project}"`);
-  render();
-}
 
 function renderDelivery() {
   // Hide only when BOTH stages are shipped — GZ/Plane (combined) AND Lao = fully complete.
