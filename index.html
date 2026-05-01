@@ -747,22 +747,43 @@ function renderTasks() {
         <div class="filter-bar"><span class="chip ${tasksPicFilter==='All'?'active':''}" onclick="setPicFilter('All')">All</span>${TEAM.map(t => `<span class="chip ${tasksPicFilter===t?'active':''}" onclick="setPicFilter('${t}')">${t}</span>`).join('')}</div>
       </div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Project / Customer</th><th>PIC</th><th class="hide-mobile">Unit</th><th class="hide-mobile">¥/u</th><th class="hide-mobile">Sample¥</th><th>Status</th><th>Date</th><th class="hide-mobile">Files</th></tr></thead>
+        <thead><tr><th>Project</th><th>PIC</th><th class="hide-mobile">Unit</th><th class="hide-mobile">¥/u</th><th class="hide-mobile">Sample¥</th><th>Status</th><th>Date</th><th class="hide-mobile">Files</th></tr></thead>
         <tbody>
-          ${filtered.map(t => {
-            const dl = daysUntil(t.deadline||t.dueDate);
-            const dlCls = dl===null?'':dl<0?'days-late':dl<=7?'days-warn':'days-ok';
-            const dlTxt = dl===null?'':dl<0?`${Math.abs(dl)}d late`:`${dl}d`;
+          ${(() => {
+            if (!filtered.length) return '<tr><td colspan="8" class="empty">No tasks match</td></tr>';
+            // Group by customer (filtered is already sorted: customer asc, then date desc within group)
+            const groups = {};
+            const order = [];
+            filtered.forEach(t => {
+              const k = t.customer || '—';
+              if (!(k in groups)) { groups[k] = []; order.push(k); }
+              groups[k].push(t);
+            });
             const sigDot = ok => `<span style="display:inline-block;width:7px;height:7px;border-radius:50%;background:${ok?'var(--green)':'var(--border)'};margin-right:3px;"></span>`;
-            return `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')">
-              <td><div class="cust-cell">${t.photoData?`<img src="${t.photoData}" class="task-photo" onclick="event.stopPropagation();showPhotoView('${t.id}')">`:`<div class="thumb">${initials(t.project)}</div>`}<div><div class="cust-name">${t.project||'—'}</div><div class="cust-proj">${t.customer||'—'}${t.description?' · '+t.description:''}</div></div></div></td>
-              <td>${t.pic||'—'}</td><td class="hide-mobile">${fmtNum(t.unit)}</td>
-              <td class="hide-mobile">${t.price?'¥'+t.price:'—'}</td><td class="hide-mobile">${t.sample?'¥'+fmtNum(t.sample):'—'}</td>
-              <td><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status||'—'}</span></td>
-              <td><div class="deadline-cell"><span>${fmtDateShort(t.dueDate)}</span>${dlTxt?`<span class="days ${dlCls}">${dlTxt}</span>`:''}</div></td>
-              <td class="hide-mobile" style="font-size:11px;color:var(--text-2);">${t.hasPhoto?'📷':''}${t.hasCPForm?'📄':''} ${sigDot(t.picSign)}P${sigDot(t.approveSign)}A</td>
-            </tr>`;
-          }).join('') || '<tr><td colspan="8" class="empty">No tasks match</td></tr>'}
+            return order.map(cust => {
+              const tasks = groups[cust];
+              const header = `<tr class="cust-header"><td colspan="8" style="background:var(--accent-soft);padding:8px 14px;">
+                <div style="display:flex;align-items:center;gap:10px;">
+                  <div class="thumb" style="width:28px;height:28px;font-size:11px;border-radius:6px;">${initials(cust)}</div>
+                  <strong style="font-size:13px;color:var(--accent);">${cust}</strong>
+                  <span style="font-size:11.5px;color:var(--text-3);font-weight:500;">${tasks.length} item${tasks.length>1?'s':''}</span>
+                </div></td></tr>`;
+              const rows = tasks.map(t => {
+                const dl = daysUntil(t.deadline||t.dueDate);
+                const dlCls = dl===null?'':dl<0?'days-late':dl<=7?'days-warn':'days-ok';
+                const dlTxt = dl===null?'':dl<0?`${Math.abs(dl)}d late`:`${dl}d`;
+                return `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')">
+                  <td><div class="cust-cell">${t.photoData?`<img src="${t.photoData}" class="task-photo" onclick="event.stopPropagation();showPhotoView('${t.id}')">`:`<div class="thumb">${initials(t.project)}</div>`}<div><div class="cust-name">${t.project||'—'}</div><div class="cust-proj">${t.description||''}</div></div></div></td>
+                  <td>${t.pic||'—'}</td><td class="hide-mobile">${fmtNum(t.unit)}</td>
+                  <td class="hide-mobile">${t.price?'¥'+t.price:'—'}</td><td class="hide-mobile">${t.sample?'¥'+fmtNum(t.sample):'—'}</td>
+                  <td><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status||'—'}</span></td>
+                  <td><div class="deadline-cell"><span>${fmtDateShort(t.dueDate)}</span>${dlTxt?`<span class="days ${dlCls}">${dlTxt}</span>`:''}</div></td>
+                  <td class="hide-mobile" style="font-size:11px;color:var(--text-2);">${t.hasPhoto?'📷':''}${t.hasCPForm?'📄':''} ${sigDot(t.picSign)}P${sigDot(t.approveSign)}A</td>
+                </tr>`;
+              }).join('');
+              return header + rows;
+            }).join('');
+          })()}
         </tbody></table></div></div></div>`;
 }
 function setTasksFilter(f) { tasksFilter = f; render(); }
