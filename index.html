@@ -861,7 +861,7 @@ function renderDelivery() {
         <div class="delivery-head"><div><div class="delivery-track">${d.tracking}</div><div class="delivery-name">${d.product}</div></div>
           <div style="text-align:right;"><div style="font-size:11px;color:var(--text-3);">Due ${fmtDateShort(d.dueDate)}${days!==null?` · <span class="days ${days<0?'days-late':days<=3?'days-warn':'days-ok'}">${days<0?Math.abs(days)+'d late':days+'d left'}</span>`:''}</div></div>
         </div>
-        <div class="stage-track">${stages.map(s => `<div class="stage ${s.cls}"><div class="stage-dot">${s.cls==='done'?'✓':''}</div><div class="stage-label">${s.label}</div><div class="stage-time">${s.status||'—'}</div><div class="stage-time">${s.time?fmtDateShort(s.time):''}</div></div>`).join('')}</div>
+        <div class="stage-track">${stages.map(s => `<div class="stage ${s.cls}"><div class="stage-dot">${s.cls==='done'?'✓':''}</div><div class="stage-label">${s.label}</div><div class="stage-time" style="${s.status==='Shipped'?'color:var(--green);font-weight:600;':''}">${s.status||'—'}</div><div class="stage-time">${s.time?fmtDateShort(s.time):''}</div></div>`).join('')}</div>
       </div>`;
     }).join('') || '<div class="panel"><div class="panel-body empty">No active shipments</div></div>'}`;
 }
