@@ -397,7 +397,7 @@ async function saveDeliveryRemote(data, originalTracking) {
     gz_status: data.gzStatus || null, gz_time: data.gzTime || null,
     plane_status: data.planeStatus || null, plane_time: data.planeTime || null,
     lao_status: data.laoStatus || null, lao_time: data.laoTime || null,
-    status: data.status, due_date: data.dueDate || null
+    due_date: data.dueDate || null
   };
   if (originalTracking) {
     await supa.from('deliveries').update(row).eq('tracking', originalTracking);
@@ -759,22 +759,29 @@ function transferTask(taskId) {
 }
 
 function renderDelivery() {
+  const gzpCount = DLV.filter(d => d.gzStatus || d.planeStatus).length;
+  const laoCount = DLV.filter(d => d.laoStatus).length;
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid">
       <div class="kpi"><div class="kpi-label">Active Shipments</div><div class="kpi-value">${DLV.length}</div></div>
-      <div class="kpi"><div class="kpi-label">From GZ</div><div class="kpi-value">${DLV.filter(d=>d.gzStatus).length}</div></div>
-      <div class="kpi"><div class="kpi-label">In Lao</div><div class="kpi-value">${DLV.filter(d=>d.laoStatus).length}</div></div>
+      <div class="kpi"><div class="kpi-label">GZ / Plane</div><div class="kpi-value">${gzpCount}</div></div>
+      <div class="kpi"><div class="kpi-label">In Lao</div><div class="kpi-value">${laoCount}</div></div>
       <div class="kpi"><div class="kpi-label">Overdue</div><div class="kpi-value" style="color:var(--red);">${DLV.filter(d=>d.dueDate&&daysUntil(d.dueDate)<0).length}</div></div>
     </div>
-    <div class="panel"><div class="panel-head"><div><div class="panel-title">Active Shipments</div><div class="panel-sub">GZ → Plane → Lao tracking pipeline · Source: Delivery sheet</div></div></div></div>
+    <div class="panel"><div class="panel-head"><div><div class="panel-title">Active Shipments</div><div class="panel-sub">GZ/Plane → Lao tracking pipeline · Source: Delivery sheet</div></div></div></div>
     ${DLV.map(d => {
       const days = daysUntil(d.dueDate);
-      const stages = [{label:'GZ',status:d.gzStatus,time:d.gzTime},{label:'Plane',status:d.planeStatus,time:d.planeTime},{label:'Lao',status:d.laoStatus,time:d.laoTime}];
+      const gzpStatus = d.gzStatus || d.planeStatus || '';
+      const gzpTime   = d.gzTime   || d.planeTime   || '';
+      const stages = [
+        { label:'GZ/Plane', status:gzpStatus, time:gzpTime },
+        { label:'Lao',      status:d.laoStatus, time:d.laoTime }
+      ];
       const lastDoneIdx = stages.findIndex(s => !s.status);
       stages.forEach((s,i) => { if (lastDoneIdx===-1) s.cls='done'; else if (i<lastDoneIdx) s.cls='done'; else if (i===lastDoneIdx) s.cls='active'; else s.cls=''; });
       return `<div class="delivery-card" onclick="openDeliveryModal('${d.tracking}')" style="cursor:pointer;">
         <div class="delivery-head"><div><div class="delivery-track">${d.tracking}</div><div class="delivery-name">${d.product}</div></div>
-          <div style="text-align:right;"><div class="badge badge-deliv">${d.status||'—'}</div><div style="font-size:11px;color:var(--text-3);margin-top:4px;">Due ${fmtDateShort(d.dueDate)}${days!==null?` · <span class="days ${days<0?'days-late':days<=3?'days-warn':'days-ok'}">${days<0?Math.abs(days)+'d late':days+'d left'}</span>`:''}</div></div>
+          <div style="text-align:right;"><div style="font-size:11px;color:var(--text-3);">Due ${fmtDateShort(d.dueDate)}${days!==null?` · <span class="days ${days<0?'days-late':days<=3?'days-warn':'days-ok'}">${days<0?Math.abs(days)+'d late':days+'d left'}</span>`:''}</div></div>
         </div>
         <div class="stage-track">${stages.map(s => `<div class="stage ${s.cls}"><div class="stage-dot">${s.cls==='done'?'✓':''}</div><div class="stage-label">${s.label}</div><div class="stage-time">${s.status||'—'}</div><div class="stage-time">${s.time?fmtDateShort(s.time):''}</div></div>`).join('')}</div>
       </div>`;
@@ -1165,20 +1172,21 @@ function deletePrice(id) { if (!confirm('Remove this entry?')) return; PRICES = 
 
 function openDeliveryModal(tracking) {
   const isEdit = !!tracking;
-  const d = isEdit ? {...DLV.find(x=>x.tracking===tracking)} : { tracking:'', product:'', gzStatus:'', gzTime:'', planeStatus:'', planeTime:'', laoStatus:'', laoTime:'', status:'Delivery', dueDate:'' };
+  const d = isEdit ? {...DLV.find(x=>x.tracking===tracking)} : { tracking:'', product:'', gzStatus:'', gzTime:'', laoStatus:'', laoTime:'', dueDate:'' };
+  const gzpStatus = d.gzStatus || d.planeStatus || '';
+  const gzpTime   = d.gzTime   || d.planeTime   || '';
   document.getElementById('modal-title').textContent = isEdit ? 'Edit Shipment' : 'New Shipment';
   document.getElementById('modal-body').innerHTML = `
     <div class="field-row"><div class="field"><label>Tracking #</label><input id="d-trk" value="${d.tracking||''}" /></div><div class="field"><label>Product</label><input id="d-prod" value="${(d.product||'').replace(/"/g,'&quot;')}" /></div></div>
-    <div class="field-row"><div class="field"><label>GZ Status</label><select id="d-gz"><option value="" ${!d.gzStatus?'selected':''}>—</option><option value="Delivery" ${d.gzStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.gzStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>GZ Time</label><input id="d-gzt" type="date" value="${d.gzTime||''}" /></div></div>
-    <div class="field-row"><div class="field"><label>Plane Status</label><select id="d-pl"><option value="" ${!d.planeStatus?'selected':''}>—</option><option value="Delivery" ${d.planeStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.planeStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Plane Time</label><input id="d-plt" type="date" value="${d.planeTime||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>GZ / Plane Status</label><select id="d-gz"><option value="" ${!gzpStatus?'selected':''}>—</option><option value="Delivery" ${gzpStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${gzpStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>GZ / Plane Time</label><input id="d-gzt" type="date" value="${gzpTime||''}" /></div></div>
     <div class="field-row"><div class="field"><label>Lao Status</label><select id="d-lao"><option value="" ${!d.laoStatus?'selected':''}>—</option><option value="Delivery" ${d.laoStatus==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.laoStatus==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Lao Time</label><input id="d-laot" type="date" value="${d.laoTime||''}" /></div></div>
-    <div class="field-row"><div class="field"><label>Status</label><select id="d-stat"><option value="Delivery" ${d.status==='Delivery'?'selected':''}>Delivery</option><option value="Shipped" ${d.status==='Shipped'?'selected':''}>Shipped</option></select></div><div class="field"><label>Due Date</label><input id="d-due" type="date" value="${d.dueDate||''}" /></div></div>`;
+    <div class="field"><label>Due Date</label><input id="d-due" type="date" value="${d.dueDate||''}" /></div>`;
   document.getElementById('modal-foot').innerHTML = `${isEdit ? '<button class="btn" style="color:var(--red);border-color:var(--red);" onclick="deleteDelivery(\''+tracking+'\')">Delete</button>' : ''}<div style="flex:1"></div><button class="btn" onclick="closeModal()">Cancel</button><button class="btn btn-primary" onclick="saveDelivery(${isEdit?'\''+tracking+'\'':'null'})">Save</button>`;
   document.getElementById('modal-bg').classList.add('show');
 }
 
 function saveDelivery(tracking) {
-  const data = { tracking:document.getElementById('d-trk').value, product:document.getElementById('d-prod').value, gzStatus:document.getElementById('d-gz').value, gzTime:document.getElementById('d-gzt').value, planeStatus:document.getElementById('d-pl').value, planeTime:document.getElementById('d-plt').value, laoStatus:document.getElementById('d-lao').value, laoTime:document.getElementById('d-laot').value, status:document.getElementById('d-stat').value, dueDate:document.getElementById('d-due').value };
+  const data = { tracking:document.getElementById('d-trk').value, product:document.getElementById('d-prod').value, gzStatus:document.getElementById('d-gz').value, gzTime:document.getElementById('d-gzt').value, planeStatus:'', planeTime:'', laoStatus:document.getElementById('d-lao').value, laoTime:document.getElementById('d-laot').value, dueDate:document.getElementById('d-due').value };
   if (tracking) { const i=DLV.findIndex(d=>d.tracking===tracking); DLV[i]=data; } else { DLV.unshift(data); }
   if (USE_SUPABASE) saveDeliveryRemote(data, tracking);
   closeModal(); persist(); render(); showToast(tracking?'Updated':'Created');
