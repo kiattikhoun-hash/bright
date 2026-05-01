@@ -894,7 +894,7 @@ function renderTeam() {
 
 function openTaskModal(id) {
   const isEdit = !!id;
-  const t = isEdit ? {...TASKS.find(x=>x.id===id)} : { id:'new_'+Date.now().toString(36), pic:TEAM[0], customer:CUSTOMERS[0]||'', project:'', description:'', unit:0, price:0, sample:0, status:'Sample', date:'2026-04-28', dueDate:'', deadline:'', picSign:false, approveSign:false, hasPhoto:false, hasCPForm:false };
+  const t = isEdit ? {...TASKS.find(x=>x.id===id)} : { id:'new_'+Date.now().toString(36), pic:'', customer:'', project:'', description:'', unit:0, price:0, sample:0, status:'Sample', date:'2026-04-28', dueDate:'', deadline:'', picSign:false, approveSign:false, hasPhoto:false, hasCPForm:false };
   document.getElementById('modal-title').textContent = isEdit ? `Edit · ${t.project}` : 'New Follow-up Task';
   document.getElementById('modal-body').innerHTML = `
     <div class="field-row">
