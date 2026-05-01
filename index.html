@@ -85,6 +85,7 @@ table.tbl tr:hover td{background:#fafbfc}
 .stage{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;position:relative}
 .stage:not(:last-child)::after{content:"";position:absolute;top:13px;left:50%;right:-50%;height:2px;background:var(--border);z-index:0}
 .stage.done:not(:last-child)::after{background:var(--green)}
+.stage.active:not(:last-child)::after{background:var(--amber)}
 .stage-dot{width:26px;height:26px;border-radius:50%;background:var(--gray-soft);border:2px solid var(--border);display:flex;align-items:center;justify-content:center;z-index:1;font-size:12px}
 .stage.done .stage-dot{background:var(--green);border-color:var(--green);color:#fff}
 .stage.active .stage-dot{background:var(--amber);border-color:var(--amber);color:#fff}
@@ -855,8 +856,12 @@ function renderDelivery() {
         { label:'GZ/Plane', status:gzpStatus, time:gzpTime },
         { label:'Lao',      status:d.laoStatus, time:d.laoTime }
       ];
-      const lastDoneIdx = stages.findIndex(s => !s.status);
-      stages.forEach((s,i) => { if (lastDoneIdx===-1) s.cls='done'; else if (i<lastDoneIdx) s.cls='done'; else if (i===lastDoneIdx) s.cls='active'; else s.cls=''; });
+      // Color each stage by its actual status: Shipped→green, Delivery→amber, empty→grey
+      stages.forEach(s => {
+        s.cls = s.status === 'Shipped' ? 'done'
+              : s.status === 'Delivery' ? 'active'
+              : '';
+      });
       return `<div class="delivery-card" onclick="openDeliveryModal('${d.tracking}')" style="cursor:pointer;">
         <div class="delivery-head"><div><div class="delivery-track">${d.tracking}</div><div class="delivery-name">${d.product}</div></div>
           <div style="text-align:right;"><div style="font-size:11px;color:var(--text-3);">Due ${fmtDateShort(d.dueDate)}${days!==null?` · <span class="days ${days<0?'days-late':days<=3?'days-warn':'days-ok'}">${days<0?Math.abs(days)+'d late':days+'d left'}</span>`:''}</div></div>
