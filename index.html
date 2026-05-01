@@ -724,9 +724,11 @@ function renderStatement() {
 
 let tasksFilter = "All", tasksPicFilter = "All";
 function renderTasks() {
-  const sCounts = { All: TASKS.length };
-  STATUSES_TASK.forEach(s => sCounts[s] = TASKS.filter(t => t.status === s).length);
-  let filtered = TASKS.slice();
+  // Tasks marked Invoice have been transferred to Product Price — hide them here.
+  const visibleTasks = TASKS.filter(t => t.status !== 'Invoice' && t.status !== 'Invoices');
+  const sCounts = { All: visibleTasks.length };
+  STATUSES_TASK.forEach(s => sCounts[s] = visibleTasks.filter(t => t.status === s).length);
+  let filtered = visibleTasks.slice();
   if (tasksFilter!=="All") filtered = filtered.filter(t => t.status === tasksFilter);
   if (tasksPicFilter!=="All") filtered = filtered.filter(t => t.pic === tasksPicFilter);
   filtered.sort((a,b) => {
@@ -735,12 +737,15 @@ function renderTasks() {
     return new Date(b.date||0) - new Date(a.date||0);
   });
 
+  // Status chips exclude Invoice (those tasks live in Product Price now)
+  const chipStatuses = STATUSES_TASK.filter(s => s !== 'Invoice' && s !== 'Invoices');
+
   document.getElementById('content').innerHTML = `
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">Follow-up Tasks</div><div class="panel-sub">Grouped by customer · Source: Follow up work sheet · Price ¥/unit · Sample total ¥</div></div>
+      <div class="panel-head"><div><div class="panel-title">Follow-up Tasks</div><div class="panel-sub">Grouped by customer · Invoice items moved to Product Price</div></div>
         <div class="filter-bar">
           <span class="chip ${tasksFilter==='All'?'active':''}" onclick="setTasksFilter('All')">All<span class="count">${sCounts.All}</span></span>
-          ${STATUSES_TASK.map(s => `<span class="chip ${tasksFilter===s?'active':''}" onclick="setTasksFilter('${s}')">${s}<span class="count">${sCounts[s]||0}</span></span>`).join('')}
+          ${chipStatuses.map(s => `<span class="chip ${tasksFilter===s?'active':''}" onclick="setTasksFilter('${s}')">${s}<span class="count">${sCounts[s]||0}</span></span>`).join('')}
         </div>
       </div>
       <div class="panel-head" style="border-top:1px solid var(--border-soft);background:#fafbfc;"><div class="panel-sub">PIC:</div>
