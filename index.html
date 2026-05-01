@@ -817,10 +817,11 @@ function transferTask(taskId) {
 }
 
 function renderDelivery() {
-  // Hide deliveries that are fully complete (any stage marked Shipped means it left that point;
-  // when laoStatus is Shipped the package has been delivered out — no longer "active").
-  const isShipped = d => d.gzStatus === 'Shipped' || d.planeStatus === 'Shipped' || d.laoStatus === 'Shipped';
-  const active = DLV.filter(d => !isShipped(d));
+  // Hide only when BOTH stages are shipped — GZ/Plane (combined) AND Lao = fully complete.
+  const isFullyShipped = d =>
+    (d.gzStatus === 'Shipped' || d.planeStatus === 'Shipped') &&
+    d.laoStatus === 'Shipped';
+  const active = DLV.filter(d => !isFullyShipped(d));
   const gzpCount = active.filter(d => d.gzStatus || d.planeStatus).length;
   const laoCount = active.filter(d => d.laoStatus).length;
   document.getElementById('content').innerHTML = `
