@@ -3,17 +3,19 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-<title>Workflow App</title>
+<title>Bright Production &amp; Printing</title>
+<link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%23142a5f'/><g stroke='%23f59e0b' stroke-width='3' stroke-linecap='round' fill='none'><line x1='32' y1='8' x2='32' y2='14'/><line x1='16' y1='14' x2='20' y2='18'/><line x1='48' y1='14' x2='44' y2='18'/></g><path d='M32 16c-7 0-12 5-12 11 0 4 2 7 5 9v3c0 1 1 2 2 2h10c1 0 2-1 2-2v-3c3-2 5-5 5-9 0-6-5-11-12-11z' fill='%23f59e0b'/><rect x='27' y='44' width='10' height='3' rx='1' fill='%23f59e0b'/><rect x='28' y='49' width='8' height='2' rx='1' fill='%23f59e0b'/></svg>"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <style>
-:root{color-scheme:light;--bg:#f6f7f9;--panel:#fff;--border:#e6e8ec;--border-soft:#eef0f3;--text:#1a1d23;--text-2:#5b6370;--text-3:#8b94a3;--accent:#4f46e5;--accent-soft:#eef2ff;--green:#10b981;--green-soft:#d1fae5;--amber:#f59e0b;--amber-soft:#fef3c7;--red:#ef4444;--red-soft:#fee2e2;--blue:#3b82f6;--blue-soft:#dbeafe;--purple:#8b5cf6;--purple-soft:#ede9fe;--pink:#ec4899;--pink-soft:#fce7f3;--gray-soft:#f1f3f5;--shadow-sm:0 1px 2px rgba(16,24,40,.04);--radius:14px}
+:root{color-scheme:light;--bg:#f4f6fb;--panel:#fff;--border:#dde3ee;--border-soft:#eaeef5;--text:#0f172a;--text-2:#475569;--text-3:#7c869a;--accent:#142a5f;--accent-soft:#e2e8f4;--accent-2:#1e40af;--brand-amber:#f59e0b;--green:#10b981;--green-soft:#d1fae5;--amber:#f59e0b;--amber-soft:#fef3c7;--red:#ef4444;--red-soft:#fee2e2;--blue:#3b82f6;--blue-soft:#dbeafe;--purple:#8b5cf6;--purple-soft:#ede9fe;--pink:#ec4899;--pink-soft:#fce7f3;--gray-soft:#f1f4f9;--shadow-sm:0 1px 2px rgba(15,23,42,.05);--radius:14px}
 *{box-sizing:border-box}html,body{margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--text);font-size:14px;line-height:1.5;-webkit-font-smoothing:antialiased}
 .app{display:flex;min-height:100vh}
 .sidebar{width:232px;background:var(--panel);border-right:1px solid var(--border);padding:20px 14px;position:sticky;top:0;height:100vh;flex-shrink:0;display:flex;flex-direction:column}
 .brand{display:flex;align-items:center;gap:10px;padding:4px 8px 18px;border-bottom:1px solid var(--border-soft);margin-bottom:14px}
-.brand-logo{width:32px;height:32px;border-radius:9px;background:linear-gradient(135deg,#4f46e5,#8b5cf6);display:flex;align-items:center;justify-content:center;color:#fff;font-weight:700;font-size:14px}
+.brand-logo{width:36px;height:36px;border-radius:9px;background:#142a5f;display:flex;align-items:center;justify-content:center;flex-shrink:0;padding:4px}
+.brand-logo svg{width:100%;height:100%;display:block}
 .brand-name{font-weight:700;font-size:15px}.brand-sub{font-size:11px;color:var(--text-3)}
 .nav-item{display:flex;align-items:center;gap:11px;padding:9px 10px;margin-bottom:2px;border-radius:9px;cursor:pointer;color:var(--text-2);font-weight:500;font-size:13.5px;user-select:none;transition:background .15s,color .15s}
 .nav-item:hover{background:var(--gray-soft);color:var(--text)}.nav-item.active{background:var(--accent-soft);color:var(--accent);font-weight:600}
@@ -127,7 +129,7 @@ body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--g
 <body>
 <div class="app">
   <aside class="sidebar">
-    <div class="brand"><div class="brand-logo">W</div><div><div class="brand-name">Workflow</div><div class="brand-sub">kiattikhoun@gmail.com</div></div></div>
+    <div class="brand"><div class="brand-logo"><svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none"><line x1="32" y1="6" x2="32" y2="13"/><line x1="14" y1="13" x2="19" y2="18"/><line x1="50" y1="13" x2="45" y2="18"/><line x1="6" y1="30" x2="12" y2="30"/><line x1="58" y1="30" x2="52" y2="30"/></g><path d="M32 14c-8 0-14 6-14 13 0 5 2 9 6 11v4c0 1 1 2 2 2h12c1 0 2-1 2-2v-4c4-2 6-6 6-11 0-7-6-13-14-13z" fill="#f59e0b"/><rect x="26" y="46" width="12" height="3" rx="1.5" fill="#f59e0b"/><rect x="28" y="51" width="8" height="2" rx="1" fill="#f59e0b"/></svg></div><div><div class="brand-name">Bright</div><div class="brand-sub">Production &amp; Printing</div></div></div>
     <div class="nav-section">Modules</div>
     <div class="nav-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
     <div class="nav-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Follow-up Tasks</div>
@@ -1179,7 +1181,7 @@ ${photo?`<div class="photo-section"><h3>Product Photo</h3><img src="${photo}"></
     <small>Approval Signature</small>
   </div>
 </div>
-<div class="footer">This document was auto-generated by the Workflow App on ${today}</div>
+<div class="footer">This document was auto-generated by Bright Production &amp; Printing on ${today}</div>
 <script>window.addEventListener('load',()=>setTimeout(()=>window.print(),300));<\/script>
 </body></html>`;
   const blob = new Blob([html], {type:'text/html'});
