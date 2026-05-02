@@ -43,7 +43,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",Roboto,sans
 .panel-head{padding:14px 18px;border-bottom:1px solid var(--border-soft);display:flex;align-items:center;gap:12px;flex-wrap:wrap}
 .panel-title{font-weight:700;font-size:14px}.panel-sub{font-size:12px;color:var(--text-3)}
 .panel-body{padding:14px 18px}.panel-body.tight{padding:0}
-.tbl-wrap{overflow-x:auto;max-height:600px}
+.tbl-wrap{overflow-x:auto}
 table.tbl{width:100%;border-collapse:collapse;font-size:13px}
 table.tbl th{text-align:left;font-weight:600;color:var(--text-2);padding:10px 14px;background:var(--gray-soft);border-bottom:1px solid var(--border-soft);font-size:11.5px;text-transform:uppercase;letter-spacing:.03em;white-space:nowrap;position:sticky;top:0;z-index:1}
 table.tbl td{padding:11px 14px;border-bottom:1px solid var(--border-soft);vertical-align:middle}
@@ -529,11 +529,35 @@ function render() {
 }
 
 function renderDashboard() {
-  // Pure summary of the Supabase `statement` view. No charts, no extra joins.
+  // Aggregate the Supabase `statement` view — every row is one project entry.
   const totalRev  = STATEMENT.reduce((s,r)=> s + r.revenue, 0);
   const totalProf = STATEMENT.reduce((s,r)=> s + r.profit,  0);
-  const margin = totalRev>0 ? (totalProf/totalRev*100) : 0;
+  const margin    = totalRev>0 ? (totalProf/totalRev*100) : 0;
 
+  // ── Done vs Pipeline split ──────────────────────────
+  const done = STATEMENT.filter(r => r.status === 'Done');
+  const pipeline = STATEMENT.filter(r => r.status !== 'Done');
+  const doneRev  = done.reduce((s,r)=> s + r.revenue, 0);
+  const doneProf = done.reduce((s,r)=> s + r.profit,  0);
+  const pipeRev  = pipeline.reduce((s,r)=> s + r.revenue, 0);
+  const pipeProf = pipeline.reduce((s,r)=> s + r.profit,  0);
+  const avgDeal  = STATEMENT.length>0 ? totalRev/STATEMENT.length : 0;
+  const profitable = STATEMENT.filter(r => r.profit > 0).length;
+  const losing     = STATEMENT.filter(r => r.profit < 0).length;
+
+  // ── Status breakdown ────────────────────────────────
+  const byStatus = {};
+  STATEMENT.forEach(r => {
+    const k = r.status || '—';
+    (byStatus[k] = byStatus[k] || {revenue:0, profit:0, count:0});
+    byStatus[k].revenue += r.revenue;
+    byStatus[k].profit  += r.profit;
+    byStatus[k].count   += 1;
+  });
+  const STATUS_ORDER = ['Done','Production','Sample','Quotation'];
+  const statusRows = STATUS_ORDER.filter(s => byStatus[s]).map(s => ({status:s, ...byStatus[s]}));
+
+  // ── By Customer ─────────────────────────────────────
   const byCust = {};
   STATEMENT.forEach(r => {
     const k = r.customer || '—';
@@ -543,9 +567,10 @@ function renderDashboard() {
     byCust[k].count   += 1;
   });
   const custRows = Object.entries(byCust)
-    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0, avg: v.count>0 ? v.revenue/v.count : 0}))
     .sort((a,b) => b.revenue - a.revenue);
 
+  // ── By Month ────────────────────────────────────────
   const byMonth = {};
   STATEMENT.forEach(r => {
     if (!r.month) return;
@@ -558,15 +583,71 @@ function renderDashboard() {
     .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
     .sort((a,b) => b.month.localeCompare(a.month));
 
+  // ── By Year (YoY) ───────────────────────────────────
+  const byYear = {};
+  STATEMENT.forEach(r => {
+    const y = (r.month || '').slice(0,4);
+    if (!y) return;
+    (byYear[y] = byYear[y] || {revenue:0, profit:0, count:0});
+    byYear[y].revenue += r.revenue;
+    byYear[y].profit  += r.profit;
+    byYear[y].count   += 1;
+  });
+  const yearRows = Object.entries(byYear)
+    .map(([y,v]) => ({year:y, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.year.localeCompare(a.year));
+
+  // ── Top products / projects ─────────────────────────
+  const byProj = {};
+  STATEMENT.forEach(r => {
+    const k = r.project || '—';
+    (byProj[k] = byProj[k] || {revenue:0, profit:0, count:0});
+    byProj[k].revenue += r.revenue;
+    byProj[k].profit  += r.profit;
+    byProj[k].count   += 1;
+  });
+  const projRows = Object.entries(byProj)
+    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
+    .sort((a,b) => b.profit - a.profit)
+    .slice(0,10);
+
+  // ── Highlights ──────────────────────────────────────
+  const bestMonth = monthRows.slice().sort((a,b)=> b.profit - a.profit)[0];
+  const topCustomer = custRows[0];
+  const biggestDeal = STATEMENT.slice().sort((a,b)=> b.revenue - a.revenue)[0];
+  const worstDeal   = STATEMENT.slice().sort((a,b)=> a.profit  - b.profit)[0];
+
   // Trend data: last 12 months in chronological order
   const trend = monthRows.slice().sort((a,b) => a.month.localeCompare(b.month)).slice(-12);
 
+  const pct = (a,b) => b>0 ? ((a-b)/b*100) : 0;
+  const yoyHtml = yearRows.length >= 2 ? (() => {
+    const cur = yearRows[0], prev = yearRows[1];
+    const dRev = pct(cur.revenue, prev.revenue);
+    const dProf= pct(cur.profit,  prev.profit);
+    const arrow = v => v>=0 ? '▲' : '▼';
+    const col   = v => v>=0 ? 'var(--green)' : 'var(--red)';
+    return `<div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Year over Year</div><div class="panel-sub">${cur.year} vs ${prev.year}</div></div></div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;">
+        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Revenue</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${fmtKipShort(cur.revenue)}</div><div style="font-size:12px;color:${col(dRev)};font-weight:600;">${arrow(dRev)} ${Math.abs(dRev).toFixed(1)}% vs ${prev.year}</div></div>
+        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Profit</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:${cur.profit>=0?'var(--green)':'var(--red)'};">${fmtKipShort(cur.profit)}</div><div style="font-size:12px;color:${col(dProf)};font-weight:600;">${arrow(dProf)} ${Math.abs(dProf).toFixed(1)}% vs ${prev.year}</div></div>
+        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Margin</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${cur.margin.toFixed(1)}%</div><div style="font-size:12px;color:var(--text-3);">prev: ${prev.margin.toFixed(1)}%</div></div>
+        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Entries</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${cur.count}</div><div style="font-size:12px;color:var(--text-3);">prev: ${prev.count}</div></div>
+      </div>
+    </div>`;
+  })() : '';
+
   document.getElementById('content').innerHTML = `
     <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div></div>
-      <div class="kpi"><div class="kpi-label">Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div></div>
-      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
-      <div class="kpi"><div class="kpi-label">Entries</div><div class="kpi-value">${STATEMENT.length}</div></div>
+      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${STATEMENT.length} entries · ${profitable} 🟢 ${losing} 🔴</div></div>
+      <div class="kpi"><div class="kpi-label">Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div><div class="kpi-delta" style="color:var(--text-3);">Margin ${margin.toFixed(1)}%</div></div>
+      <div class="kpi"><div class="kpi-label">Done · Recognised</div><div class="kpi-value" style="color:var(--green)">${fmtKipShort(doneRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${done.length} jobs · profit ${fmtKipShort(doneProf)}</div></div>
+      <div class="kpi"><div class="kpi-label">Pipeline</div><div class="kpi-value" style="color:var(--amber)">${fmtKipShort(pipeRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${pipeline.length} in progress · profit ${fmtKipShort(pipeProf)}</div></div>
+      <div class="kpi"><div class="kpi-label">Avg Deal</div><div class="kpi-value">${fmtKipShort(avgDeal)}</div><div class="kpi-delta" style="color:var(--text-3);">Per entry</div></div>
+      <div class="kpi"><div class="kpi-label">Customers</div><div class="kpi-value">${custRows.length}</div><div class="kpi-delta" style="color:var(--text-3);">Top: ${topCustomer ? topCustomer.name : '—'}</div></div>
+      <div class="kpi"><div class="kpi-label">Best Month</div><div class="kpi-value" style="font-size:16px;">${bestMonth ? bestMonth.month : '—'}</div><div class="kpi-delta" style="color:var(--green);">${bestMonth ? fmtKipShort(bestMonth.profit) : ''}</div></div>
+      <div class="kpi"><div class="kpi-label">Biggest Deal</div><div class="kpi-value" style="font-size:16px;">${biggestDeal ? biggestDeal.project : '—'}</div><div class="kpi-delta" style="color:var(--text-3);">${biggestDeal ? fmtKipShort(biggestDeal.revenue) : ''}</div></div>
     </div>
 
     <div class="chart-box" style="margin-bottom:18px;">
@@ -575,22 +656,55 @@ function renderDashboard() {
       <div class="chart-canvas-wrap" style="height:280px;"><canvas id="trend-chart"></canvas></div>
     </div>
 
+    ${yoyHtml}
+
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">From <code>statement</code> view</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">By Status</div><div class="panel-sub">Pipeline maturity</div></div></div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
+        ${statusRows.map(r => {
+          const colorMap = {Done:'var(--green)',Production:'var(--blue)',Sample:'var(--purple)',Quotation:'var(--amber)'};
+          const c = colorMap[r.status] || 'var(--text-3)';
+          const m = r.revenue>0 ? r.profit/r.revenue*100 : 0;
+          return `<div style="border-left:3px solid ${c};padding:8px 12px;background:var(--bg);border-radius:6px;">
+            <div style="font-size:12px;color:${c};font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${r.status}</div>
+            <div style="font-size:18px;font-weight:700;margin-top:4px;">${fmtKipShort(r.revenue)}</div>
+            <div style="font-size:11.5px;color:var(--text-3);">${r.count} rows · profit <strong style="color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmtKipShort(r.profit)}</strong> · ${m.toFixed(1)}%</div>
+          </div>`;
+        }).join('') || '<div class="empty">No data</div>'}
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Top 10 Products</div><div class="panel-sub">Aggregated by project name · sorted by profit</div></div></div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
-        <tbody>${custRows.map(r => `<tr>
+        <thead><tr><th>Project</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${projRows.map(r => `<tr>
           <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
           <td class="hide-mobile">${r.count}</td>
           <td><strong>${fmtKipShort(r.revenue)}</strong></td>
           <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
           <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
+        </tr>`).join('') || '<tr><td colspan="5" class="empty">No data</td></tr>'}</tbody>
       </table></div></div>
     </div>
 
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">Most recent first</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">${custRows.length} accounts · sorted by revenue</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Customer</th><th class="hide-mobile">Entries</th><th class="hide-mobile">Avg Deal</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
+        <tbody>${custRows.map(r => `<tr>
+          <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
+          <td class="hide-mobile">${r.count}</td>
+          <td class="hide-mobile">${fmtKipShort(r.avg)}</td>
+          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+        </tr>`).join('') || '<tr><td colspan="6" class="empty">No statement rows</td></tr>'}</tbody>
+      </table></div></div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">${monthRows.length} months · most recent first</div></div></div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Month</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
         <tbody>${monthRows.map(r => `<tr>
@@ -601,7 +715,31 @@ function renderDashboard() {
           <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
         </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
       </table></div></div>
-    </div>`;
+    </div>
+
+    ${biggestDeal || worstDeal ? `<div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Highlights</div><div class="panel-sub">Notable single entries</div></div></div>
+      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:14px;">
+        ${biggestDeal ? `<div style="border-left:3px solid var(--green);padding:8px 12px;background:var(--bg);border-radius:6px;">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">Biggest Deal</div>
+          <div style="font-weight:700;margin-top:2px;">${biggestDeal.project} · ${biggestDeal.customer}</div>
+          <div style="font-size:12.5px;color:var(--text-3);">${fmtDateShort(biggestDeal.date)} · ${fmtNum(biggestDeal.unit)} units</div>
+          <div style="margin-top:4px;font-weight:700;">${fmtKipShort(biggestDeal.revenue)} <span style="color:var(--green);">profit ${fmtKipShort(biggestDeal.profit)}</span></div>
+        </div>`:''}
+        ${worstDeal && worstDeal.profit < 0 ? `<div style="border-left:3px solid var(--red);padding:8px 12px;background:var(--bg);border-radius:6px;">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">Largest Loss</div>
+          <div style="font-weight:700;margin-top:2px;">${worstDeal.project} · ${worstDeal.customer}</div>
+          <div style="font-size:12.5px;color:var(--text-3);">${fmtDateShort(worstDeal.date)} · ${fmtNum(worstDeal.unit)} units</div>
+          <div style="margin-top:4px;font-weight:700;">${fmtKipShort(worstDeal.revenue)} <span style="color:var(--red);">profit ${fmtKipShort(worstDeal.profit)}</span></div>
+        </div>`:''}
+        ${bestMonth ? `<div style="border-left:3px solid var(--accent);padding:8px 12px;background:var(--bg);border-radius:6px;">
+          <div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">Best Month</div>
+          <div style="font-weight:700;margin-top:2px;">${bestMonth.month}</div>
+          <div style="font-size:12.5px;color:var(--text-3);">${bestMonth.count} entries · margin ${bestMonth.margin.toFixed(1)}%</div>
+          <div style="margin-top:4px;font-weight:700;">${fmtKipShort(bestMonth.revenue)} <span style="color:var(--green);">profit ${fmtKipShort(bestMonth.profit)}</span></div>
+        </div>`:''}
+      </div>
+    </div>`:''}`;
 
   drawTrendChart(trend);
 }
