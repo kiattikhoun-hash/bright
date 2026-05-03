@@ -68,6 +68,14 @@ table.tbl tr:hover td{background:#fafbfc}
 .field input:focus,.field select:focus,.field textarea:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(79,70,229,.12)}
 .field input[readonly],.field select[disabled]{background:var(--gray-soft);color:var(--text-2)}
 .field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field-row-3{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.ac-wrap{position:relative}
+.ac-list{position:absolute;top:100%;left:0;right:0;background:var(--panel);border:1px solid var(--border);border-radius:9px;margin-top:4px;max-height:240px;overflow-y:auto;z-index:50;box-shadow:0 8px 20px rgba(15,23,42,.12);display:none}
+.ac-list.show{display:block}
+.ac-item{padding:8px 12px;font-size:13.5px;cursor:pointer;color:var(--text);border-bottom:1px solid var(--border-soft)}
+.ac-item:last-child{border-bottom:none}
+.ac-item:hover,.ac-item.active{background:var(--accent-soft);color:var(--accent)}
+.ac-item.ac-empty{color:var(--text-3);font-style:italic;cursor:default}
+.ac-item.ac-empty:hover{background:transparent;color:var(--text-3)}
 .note-box{background:var(--accent-soft);border:1px solid #c7d2fe;border-radius:9px;padding:10px 12px;font-size:12.5px;color:var(--accent);margin-bottom:14px}
 .formula-box{background:#fffbeb;border:1px solid #fde68a;border-radius:9px;padding:12px 14px;font-size:12.5px;margin-bottom:14px;color:#92400e;line-height:1.6}
 .formula-box code{background:#fef3c7;padding:1px 6px;border-radius:4px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#78350f}
@@ -280,16 +288,6 @@ async function addCustomer(name) {
   return true;
 }
 
-async function removeCustomer(name) {
-  if (!name) return false;
-  if (USE_SUPABASE) {
-    const { error } = await supa.from('customers').delete().eq('name', name);
-    if (error) { showToast('Remove failed: ' + error.message); return false; }
-  }
-  CUSTOMERS = CUSTOMERS.filter(c => c !== name);
-  return true;
-}
-
 async function addTeamMember(name) {
   name = (name || '').trim();
   if (!name) return false;
@@ -302,49 +300,63 @@ async function addTeamMember(name) {
   return true;
 }
 
-async function removeTeamMember(name) {
-  if (!name) return false;
-  if (USE_SUPABASE) {
-    const { error } = await supa.from('team_members').delete().eq('name', name);
-    if (error) { showToast('Remove failed: ' + error.message); return false; }
+// Reusable autocomplete dropdown — replaces native <datalist> for reliable behavior
+// on every browser + mobile.  Shows all options on focus, filters as you type,
+// click or Enter to select, allows new entries.
+function setupAutocomplete(input, getItems) {
+  if (!input || input._acBound) return;
+  input._acBound = true;
+  const wrap = input.closest('.ac-wrap');
+  if (!wrap) return;
+
+  const list = document.createElement('div');
+  list.className = 'ac-list';
+  wrap.appendChild(list);
+
+  let highlight = -1;
+  let visible = [];
+
+  function render(filter) {
+    const items = (getItems() || []).filter(it =>
+      !filter || String(it).toLowerCase().includes(filter.toLowerCase())
+    );
+    visible = items;
+    if (highlight >= items.length) highlight = items.length - 1;
+    list.innerHTML = items.length
+      ? items.map((it, i) => `<div class="ac-item ${i === highlight ? 'active' : ''}" data-i="${i}">${String(it).replace(/&/g,'&amp;').replace(/</g,'&lt;')}</div>`).join('')
+      : '<div class="ac-item ac-empty">— type to add new —</div>';
   }
-  TEAM = TEAM.filter(p => p !== name);
-  return true;
-}
 
-function refreshDatalist(id, items) {
-  const dl = document.getElementById(id);
-  if (!dl) return;
-  dl.innerHTML = items.map(v => `<option value="${(v||'').replace(/"/g,'&quot;')}">`).join('');
-}
+  function open() { render(input.value); list.classList.add('show'); }
+  function close() { list.classList.remove('show'); highlight = -1; }
+  function select(val) { input.value = val; close(); input.dispatchEvent(new Event('change', { bubbles: true })); }
 
-async function removeNamedCustomer(inputId) {
-  const inp = document.getElementById(inputId || 'f-cust');
-  if (!inp) return;
-  const name = (inp.value || '').trim();
-  if (!name) { showToast('Type or pick a customer first'); return; }
-  if (!CUSTOMERS.includes(name)) { showToast(`"${name}" is not in the customer list`); return; }
-  if (!window.confirm(`Remove customer "${name}"?`)) return;
-  const ok = await removeCustomer(name);
-  if (!ok) return;
-  inp.value = '';
-  refreshDatalist('cust-dl', CUSTOMERS);
-  refreshDatalist('pcust-dl', CUSTOMERS);
-  showToast('Customer removed: ' + name);
-}
-
-async function removeNamedPic() {
-  const inp = document.getElementById('f-pic');
-  if (!inp) return;
-  const name = (inp.value || '').trim();
-  if (!name) { showToast('Type or pick a member first'); return; }
-  if (!TEAM.includes(name)) { showToast(`"${name}" is not in the team list`); return; }
-  if (!window.confirm(`Remove team member "${name}"?`)) return;
-  const ok = await removeTeamMember(name);
-  if (!ok) return;
-  inp.value = '';
-  refreshDatalist('pic-dl', TEAM);
-  showToast('Member removed: ' + name);
+  input.addEventListener('focus', () => { highlight = -1; open(); });
+  input.addEventListener('click', () => { open(); });
+  input.addEventListener('input', () => { highlight = -1; open(); });
+  input.addEventListener('keydown', e => {
+    if (!list.classList.contains('show')) {
+      if (e.key === 'ArrowDown') { open(); e.preventDefault(); }
+      return;
+    }
+    if (e.key === 'ArrowDown') { e.preventDefault(); highlight = Math.min(highlight + 1, visible.length - 1); render(input.value); scrollHighlightIntoView(); }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); highlight = Math.max(highlight - 1, -1); render(input.value); scrollHighlightIntoView(); }
+    else if (e.key === 'Enter' && highlight >= 0 && visible[highlight]) { e.preventDefault(); select(visible[highlight]); }
+    else if (e.key === 'Escape') { close(); }
+    else if (e.key === 'Tab') { close(); }
+  });
+  function scrollHighlightIntoView() {
+    const el = list.querySelector('.ac-item.active');
+    if (el) el.scrollIntoView({ block: 'nearest' });
+  }
+  list.addEventListener('mousedown', e => {
+    const item = e.target.closest('.ac-item');
+    if (!item || item.classList.contains('ac-empty')) return;
+    e.preventDefault();
+    const i = parseInt(item.dataset.i, 10);
+    if (visible[i] != null) select(visible[i]);
+  });
+  document.addEventListener('mousedown', e => { if (!wrap.contains(e.target)) close(); });
 }
 
 async function persist() {
@@ -1038,19 +1050,11 @@ function openTaskModal(id) {
   document.getElementById('modal-body').innerHTML = `
     <div class="field-row">
       <div class="field"><label>PIC</label>
-        <div style="display:flex;gap:6px;">
-          <input id="f-pic" list="pic-dl" value="${(t.pic||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
-          <button type="button" class="btn" title="Remove this team member" onclick="removeNamedPic()" style="padding:0 10px;">🗑</button>
-        </div>
-        <datalist id="pic-dl">${TEAM.map(p=>`<option value="${p.replace(/"/g,'&quot;')}">`).join('')}</datalist>
+        <div class="ac-wrap"><input id="f-pic" value="${(t.pic||'').replace(/"/g,'&quot;')}" placeholder="Click or type to search/add…" autocomplete="off" /></div>
       </div>
       <div class="field"><label>Customer</label>
-        <div style="display:flex;gap:6px;">
-          <input id="f-cust" list="cust-dl" value="${(t.customer||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
-          <button type="button" class="btn" title="Remove this customer" onclick="removeNamedCustomer('f-cust')" style="padding:0 10px;">🗑</button>
-        </div>
-        <datalist id="cust-dl">${CUSTOMERS.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>
-        <div class="helper">Type to search; a new name will be saved as a new customer.</div>
+        <div class="ac-wrap"><input id="f-cust" value="${(t.customer||'').replace(/"/g,'&quot;')}" placeholder="Click or type to search/add…" autocomplete="off" /></div>
+        <div class="helper">A new name typed here will be saved as a new customer.</div>
       </div>
     </div>
     <div class="field"><label>Project</label><input id="f-proj" value="${t.project||''}" /></div>
@@ -1096,7 +1100,11 @@ function openTaskModal(id) {
   m.dataset.approveSigData = t.approveSigData || '';
   m.dataset.photoData = t.photoData || '';
   document.getElementById('modal-bg').classList.add('show');
-  setTimeout(() => { setupSigPad('sig-pic','pic'); setupSigPad('sig-approve','approve'); updateCPFormStatus(); }, 30);
+  setTimeout(() => {
+    setupSigPad('sig-pic','pic'); setupSigPad('sig-approve','approve'); updateCPFormStatus();
+    setupAutocomplete(document.getElementById('f-pic'),  () => TEAM);
+    setupAutocomplete(document.getElementById('f-cust'), () => CUSTOMERS);
+  }, 30);
 }
 
 function setupSigPad(canvasId, kind) {
@@ -1365,11 +1373,7 @@ function openPriceModal(id) {
     ${isEdit ? `<div class="note-box">Auto-transferred from Follow-up. Date, customer, project, unit, production, sample are read-only.</div>`:''}
     <div class="field-row"><div class="field"><label>Date</label><input id="p-date" type="date" value="${p.date||''}" ${isEdit?'readonly':''} /></div><div class="field"><label>Customer</label>${isEdit
       ? `<input id="p-cust" value="${(p.customer||'').replace(/"/g,'&quot;')}" readonly />`
-      : `<div style="display:flex;gap:6px;">
-          <input id="p-cust" list="pcust-dl" value="${(p.customer||'').replace(/"/g,'&quot;')}" placeholder="Type to search or add…" autocomplete="off" style="flex:1;" />
-          <button type="button" class="btn" title="Remove this customer" onclick="removeNamedCustomer('p-cust')" style="padding:0 10px;">🗑</button>
-        </div>
-        <datalist id="pcust-dl">${CUSTOMERS.map(c=>`<option value="${c.replace(/"/g,'&quot;')}">`).join('')}</datalist>`
+      : `<div class="ac-wrap"><input id="p-cust" value="${(p.customer||'').replace(/"/g,'&quot;')}" placeholder="Click or type to search/add…" autocomplete="off" /></div>`
     }</div></div>
     <div class="field"><label>Project</label><input id="p-proj" value="${(p.project||'').replace(/"/g,'&quot;')}" ${isEdit?'readonly':''} /></div>
     <div class="field-row-3"><div class="field"><label>Unit</label><input id="p-unit" type="number" value="${p.unit||0}" ${isEdit?'readonly':''} /></div><div class="field"><label>Production ¥/u</label><input id="p-prod" type="number" step="0.01" value="${p.production||0}" ${isEdit?'readonly':''} /></div><div class="field"><label>Sample ¥</label><input id="p-sample" type="number" value="${p.sample||0}" ${isEdit?'readonly':''} /></div></div>
@@ -1385,6 +1389,7 @@ function openPriceModal(id) {
   }
   ['p-unit','p-prod','p-sample','p-rate','p-log','p-sell'].forEach(id => { const el = document.getElementById(id); if (el) el.addEventListener('input', updateCalc); });
   updateCalc();
+  if (!isEdit) setupAutocomplete(document.getElementById('p-cust'), () => CUSTOMERS);
   document.getElementById('modal-bg').classList.add('show');
 }
 
