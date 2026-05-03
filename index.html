@@ -582,18 +582,42 @@ function renderDashboard() {
     .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0, avg: v.count>0 ? v.revenue/v.count : 0}))
     .sort((a,b) => b.revenue - a.revenue);
 
-  // ── By Month ────────────────────────────────────────
+  // ── By Month (with per-customer breakdown for detail table) ──
   const byMonth = {};
   STATEMENT.forEach(r => {
     if (!r.month) return;
-    (byMonth[r.month] = byMonth[r.month] || {revenue:0, profit:0, count:0});
-    byMonth[r.month].revenue += r.revenue;
-    byMonth[r.month].profit  += r.profit;
-    byMonth[r.month].count   += 1;
+    if (!byMonth[r.month]) byMonth[r.month] = { revenue:0, profit:0, count:0, profitable:0, losing:0, custs:{} };
+    const mb = byMonth[r.month];
+    mb.revenue += r.revenue;
+    mb.profit  += r.profit;
+    mb.count   += 1;
+    if (r.profit > 0) mb.profitable += 1;
+    else if (r.profit < 0) mb.losing += 1;
+    const ck = r.customer || '—';
+    if (!mb.custs[ck]) mb.custs[ck] = { revenue:0, profit:0 };
+    mb.custs[ck].revenue += r.revenue;
+    mb.custs[ck].profit  += r.profit;
   });
-  const monthRows = Object.entries(byMonth)
-    .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
-    .sort((a,b) => b.month.localeCompare(a.month));
+  // sort ascending so we can compute prev-month delta, then reverse for display
+  const monthAsc = Object.entries(byMonth)
+    .map(([m,v]) => {
+      const margin = v.revenue>0 ? v.profit/v.revenue*100 : 0;
+      const cost = v.revenue - v.profit;
+      const avg  = v.count>0 ? v.revenue/v.count : 0;
+      const customers = Object.keys(v.custs).length;
+      const top = Object.entries(v.custs).sort((a,b)=> b[1].revenue - a[1].revenue)[0];
+      return { month:m, revenue:v.revenue, profit:v.profit, count:v.count,
+               profitable:v.profitable, losing:v.losing,
+               margin, cost, avg, customers,
+               topCust: top ? top[0] : '—', topCustRev: top ? top[1].revenue : 0 };
+    })
+    .sort((a,b) => a.month.localeCompare(b.month));
+  monthAsc.forEach((m, i) => {
+    const prev = monthAsc[i-1];
+    m.deltaProfit = prev && prev.profit !== 0 ? ((m.profit - prev.profit) / Math.abs(prev.profit) * 100) : null;
+    m.deltaRev    = prev && prev.revenue !== 0 ? ((m.revenue - prev.revenue) / Math.abs(prev.revenue) * 100) : null;
+  });
+  const monthRows = monthAsc.slice().reverse();
 
   // ── By Year (YoY) ───────────────────────────────────
   const byYear = {};
@@ -701,31 +725,37 @@ function renderDashboard() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">${custRows.length} accounts · sorted by revenue</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Monthly Breakdown</div><div class="panel-sub">${monthRows.length} months · revenue, cost, profit, customers &amp; vs-prev delta</div></div></div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th class="hide-mobile">Entries</th><th class="hide-mobile">Avg Deal</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
-        <tbody>${custRows.map(r => `<tr>
-          <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
-          <td class="hide-mobile">${r.count}</td>
-          <td class="hide-mobile">${fmtKipShort(r.avg)}</td>
-          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
-          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
-          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
-        </tr>`).join('') || '<tr><td colspan="6" class="empty">No statement rows</td></tr>'}</tbody>
-      </table></div></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">${monthRows.length} months · most recent first</div></div></div>
-      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Month</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
-        <tbody>${monthRows.map(r => `<tr>
-          <td><strong>${r.month}</strong></td>
-          <td class="hide-mobile">${r.count}</td>
-          <td>${fmtKipShort(r.revenue)}</td>
-          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
-          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="empty">No statement rows</td></tr>'}</tbody>
+        <thead><tr>
+          <th>Month</th>
+          <th class="hide-mobile">Entries</th>
+          <th class="hide-mobile">Customers</th>
+          <th>Revenue</th>
+          <th class="hide-mobile">Cost</th>
+          <th>Profit</th>
+          <th class="hide-mobile">Margin</th>
+          <th class="hide-mobile">Avg Deal</th>
+          <th class="hide-mobile">vs prev</th>
+          <th class="hide-mobile">Top customer</th>
+        </tr></thead>
+        <tbody>${monthRows.map(r => {
+          const dArrow = r.deltaProfit === null ? '—' : (r.deltaProfit >= 0 ? '▲' : '▼');
+          const dCol = r.deltaProfit === null ? 'var(--text-3)' : (r.deltaProfit >= 0 ? 'var(--green)' : 'var(--red)');
+          const dTxt = r.deltaProfit === null ? '—' : `${dArrow} ${Math.abs(r.deltaProfit).toFixed(0)}%`;
+          return `<tr>
+            <td><strong>${r.month}</strong></td>
+            <td class="hide-mobile">${r.count} <span style="color:var(--text-3);font-size:11px;">(${r.profitable}🟢 ${r.losing}🔴)</span></td>
+            <td class="hide-mobile">${r.customers}</td>
+            <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+            <td class="hide-mobile" style="color:var(--text-2);">${fmtKipShort(r.cost)}</td>
+            <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+            <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+            <td class="hide-mobile" style="color:var(--text-2);">${fmtKipShort(r.avg)}</td>
+            <td class="hide-mobile" style="color:${dCol};font-weight:600;">${dTxt}</td>
+            <td class="hide-mobile" style="font-size:11.5px;color:var(--text-2);">${r.topCust} <span style="color:var(--text-3);">(${fmtKipShort(r.topCustRev)})</span></td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="10" class="empty">No statement rows</td></tr>'}</tbody>
       </table></div></div>
     </div>
 
@@ -798,29 +828,41 @@ function renderStatement() {
   const totalProf = done.reduce((s,r)=> s + r.profit,  0);
   const margin = totalRev>0 ? (totalProf/totalRev*100) : 0;
 
-  const byCust = {};
-  done.forEach(r => {
-    const k = r.customer || '—';
-    (byCust[k] = byCust[k] || {revenue:0, profit:0, count:0});
-    byCust[k].revenue += r.revenue;
-    byCust[k].profit  += r.profit;
-    byCust[k].count   += 1;
-  });
-  const custRows = Object.entries(byCust)
-    .map(([name,v]) => ({name, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
-    .sort((a,b) => b.revenue - a.revenue);
-
+  // Detailed monthly aggregation (Done jobs only)
   const byMonth = {};
   done.forEach(r => {
     if (!r.month) return;
-    (byMonth[r.month] = byMonth[r.month] || {revenue:0, profit:0, count:0});
-    byMonth[r.month].revenue += r.revenue;
-    byMonth[r.month].profit  += r.profit;
-    byMonth[r.month].count   += 1;
+    if (!byMonth[r.month]) byMonth[r.month] = { revenue:0, profit:0, count:0, profitable:0, losing:0, custs:{} };
+    const mb = byMonth[r.month];
+    mb.revenue += r.revenue;
+    mb.profit  += r.profit;
+    mb.count   += 1;
+    if (r.profit > 0) mb.profitable += 1;
+    else if (r.profit < 0) mb.losing += 1;
+    const ck = r.customer || '—';
+    if (!mb.custs[ck]) mb.custs[ck] = { revenue:0, profit:0 };
+    mb.custs[ck].revenue += r.revenue;
+    mb.custs[ck].profit  += r.profit;
   });
-  const monthRows = Object.entries(byMonth)
-    .map(([m,v]) => ({month:m, ...v, margin: v.revenue>0 ? v.profit/v.revenue*100 : 0}))
-    .sort((a,b) => b.month.localeCompare(a.month));
+  const monthAsc = Object.entries(byMonth)
+    .map(([m,v]) => {
+      const margin = v.revenue>0 ? v.profit/v.revenue*100 : 0;
+      const cost = v.revenue - v.profit;
+      const avg  = v.count>0 ? v.revenue/v.count : 0;
+      const customers = Object.keys(v.custs).length;
+      const top = Object.entries(v.custs).sort((a,b)=> b[1].revenue - a[1].revenue)[0];
+      return { month:m, revenue:v.revenue, profit:v.profit, count:v.count,
+               profitable:v.profitable, losing:v.losing,
+               margin, cost, avg, customers,
+               topCust: top ? top[0] : '—', topCustRev: top ? top[1].revenue : 0 };
+    })
+    .sort((a,b) => a.month.localeCompare(b.month));
+  monthAsc.forEach((m, i) => {
+    const prev = monthAsc[i-1];
+    m.deltaProfit = prev && prev.profit !== 0 ? ((m.profit - prev.profit) / Math.abs(prev.profit) * 100) : null;
+    m.deltaRev    = prev && prev.revenue !== 0 ? ((m.revenue - prev.revenue) / Math.abs(prev.revenue) * 100) : null;
+  });
+  const monthRows = monthAsc.slice().reverse();
 
   const lineItems = done.slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
@@ -833,30 +875,37 @@ function renderStatement() {
     </div>
 
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Customer</div><div class="panel-sub">Done entries only</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Monthly Breakdown</div><div class="panel-sub">${monthRows.length} months · Done jobs only · revenue, cost, profit, customers &amp; vs-prev delta</div></div></div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Customer</th><th class="hide-mobile">Jobs</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
-        <tbody>${custRows.map(r => `<tr>
-          <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
-          <td class="hide-mobile">${r.count}</td>
-          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
-          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
-          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="empty">No completed jobs yet</td></tr>'}</tbody>
-      </table></div></div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Month</div><div class="panel-sub">Most recent first</div></div></div>
-      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Month</th><th class="hide-mobile">Jobs</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
-        <tbody>${monthRows.map(r => `<tr>
-          <td><strong>${r.month}</strong></td>
-          <td class="hide-mobile">${r.count}</td>
-          <td>${fmtKipShort(r.revenue)}</td>
-          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
-          <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
-        </tr>`).join('') || '<tr><td colspan="5" class="empty">No completed jobs yet</td></tr>'}</tbody>
+        <thead><tr>
+          <th>Month</th>
+          <th class="hide-mobile">Jobs</th>
+          <th class="hide-mobile">Customers</th>
+          <th>Revenue</th>
+          <th class="hide-mobile">Cost</th>
+          <th>Profit</th>
+          <th class="hide-mobile">Margin</th>
+          <th class="hide-mobile">Avg Deal</th>
+          <th class="hide-mobile">vs prev</th>
+          <th class="hide-mobile">Top customer</th>
+        </tr></thead>
+        <tbody>${monthRows.map(r => {
+          const dArrow = r.deltaProfit === null ? '—' : (r.deltaProfit >= 0 ? '▲' : '▼');
+          const dCol = r.deltaProfit === null ? 'var(--text-3)' : (r.deltaProfit >= 0 ? 'var(--green)' : 'var(--red)');
+          const dTxt = r.deltaProfit === null ? '—' : `${dArrow} ${Math.abs(r.deltaProfit).toFixed(0)}%`;
+          return `<tr>
+            <td><strong>${r.month}</strong></td>
+            <td class="hide-mobile">${r.count} <span style="color:var(--text-3);font-size:11px;">(${r.profitable}🟢 ${r.losing}🔴)</span></td>
+            <td class="hide-mobile">${r.customers}</td>
+            <td><strong>${fmtKipShort(r.revenue)}</strong></td>
+            <td class="hide-mobile" style="color:var(--text-2);">${fmtKipShort(r.cost)}</td>
+            <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+            <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
+            <td class="hide-mobile" style="color:var(--text-2);">${fmtKipShort(r.avg)}</td>
+            <td class="hide-mobile" style="color:${dCol};font-weight:600;">${dTxt}</td>
+            <td class="hide-mobile" style="font-size:11.5px;color:var(--text-2);">${r.topCust} <span style="color:var(--text-3);">(${fmtKipShort(r.topCustRev)})</span></td>
+          </tr>`;
+        }).join('') || '<tr><td colspan="10" class="empty">No completed jobs yet</td></tr>'}</tbody>
       </table></div></div>
     </div>
 
