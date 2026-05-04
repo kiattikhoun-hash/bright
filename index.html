@@ -453,7 +453,9 @@ const fmtKipShort = n => { const v = Math.abs(n||0); if (v>=1e9) return "₭"+(n
 const fmtNum = n => (n||0).toLocaleString('en-US');
 const fmtDate = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
 const fmtDateShort = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
-const TODAY = new Date('2026-04-28');
+// today in YYYY-MM-DD using local timezone (matches what <input type="date"> expects)
+const todayISO = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
+const TODAY = new Date(todayISO());
 const daysUntil = s => { if(!s) return null; const d=new Date(s); return Math.round((d-TODAY)/(1000*60*60*24)); };
 const initials = s => (s||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
 
@@ -1219,7 +1221,7 @@ function renderTeam() {
 
 function openTaskModal(id) {
   const isEdit = !!id;
-  const t = isEdit ? {...TASKS.find(x=>x.id===id)} : { id:'new_'+Date.now().toString(36), pic:'', customer:'', project:'', description:'', unit:0, price:0, sample:0, status:'Sample', date:'2026-04-28', dueDate:'', deadline:'', picSign:false, approveSign:false, hasPhoto:false, hasCPForm:false };
+  const t = isEdit ? {...TASKS.find(x=>x.id===id)} : { id:'new_'+Date.now().toString(36), pic:'', customer:'', project:'', description:'', unit:0, price:0, sample:0, status:'Sample', date:todayISO(), dueDate:'', deadline:'', picSign:false, approveSign:false, hasPhoto:false, hasCPForm:false };
   document.getElementById('modal-title').textContent = isEdit ? `Edit · ${t.project}` : 'New Follow-up Task';
   document.getElementById('modal-body').innerHTML = `
     <div class="field-row">
@@ -1555,7 +1557,7 @@ function deleteTask(id) {
 
 function openPriceModal(id) {
   const isEdit = !!id;
-  const p = isEdit ? {...PRICES.find(x => x.id===id)} : { id:'p_'+Date.now().toString(36), date:'2026-04-28', customer:CUSTOMERS[0]||'', project:'', unit:0, sample:0, production:0, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' };
+  const p = isEdit ? {...PRICES.find(x => x.id===id)} : { id:'p_'+Date.now().toString(36), date:todayISO(), customer:CUSTOMERS[0]||'', project:'', unit:0, sample:0, production:0, logistic:0, rateYuan:3200, sellPrice:0, status:'Invoice' };
   document.getElementById('modal-title').textContent = isEdit ? `Edit Price · ${p.project}` : 'New Price';
   document.getElementById('modal-body').innerHTML = `
     ${isEdit ? `<div class="note-box">Auto-transferred from Follow-up. Date, customer, project, unit, production, sample are read-only.</div>`:''}
