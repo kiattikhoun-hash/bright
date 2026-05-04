@@ -141,6 +141,7 @@ body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--g
     <div class="nav-section">Modules</div>
     <div class="nav-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
     <div class="nav-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Follow-up Tasks</div>
+    <div class="nav-item" data-view="schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Schedule</div>
     <div class="nav-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Product Price</div>
     <div class="nav-item admin-only" data-view="statement"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>Financial Statement</div>
     <div class="nav-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
@@ -161,6 +162,7 @@ body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--g
 <nav class="mobile-tabbar">
   <div class="tab-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
   <div class="tab-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Tasks</div>
+  <div class="tab-item" data-view="schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Schedule</div>
   <div class="tab-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Prices</div>
   <div class="tab-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
   <div class="tab-item" data-view="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Admin</div>
@@ -523,7 +525,8 @@ function bindNav() {
 
 function render() {
   const doneCount = STATEMENT.filter(r => r.status === 'Done').length;
-  const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
+  const scheduledCount = TASKS.filter(t => t.status !== 'Invoice' && t.status !== 'Invoices' && t.status !== 'Done' && (t.dueDate || t.deadline)).length;
+  const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], schedule:["Follow-up Schedule", `${scheduledCount} tasks with due/deadline dates`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
   document.getElementById('page-title').textContent = titles[currentView][0];
   document.getElementById('page-sub').textContent  = titles[currentView][1];
   const addBtn = document.getElementById('header-add-btn');
@@ -533,6 +536,7 @@ function render() {
   addBtn.onclick = () => currentView==='prices' ? openPriceModal() : currentView==='delivery' ? openDeliveryModal() : openTaskModal();
   if (currentView==="dashboard") renderDashboard();
   if (currentView==="tasks")     renderTasks();
+  if (currentView==="schedule")  renderSchedule();
   if (currentView==="prices")    renderPrices();
   if (currentView==="statement") renderStatement();
   if (currentView==="delivery")  renderDelivery();
@@ -995,6 +999,127 @@ function renderTasks() {
 }
 function setTasksFilter(f) { tasksFilter = f; render(); }
 function setPicFilter(p) { tasksPicFilter = p; render(); }
+
+// ─────────────────────────────────────── Follow-up Schedule ───
+let schedPicFilter = 'All';
+function setSchedPic(p) { schedPicFilter = p; render(); }
+
+function renderSchedule() {
+  // Active tasks only — exclude Done and Invoice (those moved on)
+  const active = TASKS.filter(t =>
+    t.status !== 'Done' && t.status !== 'Invoice' && t.status !== 'Invoices'
+  );
+
+  // Priority bucket based on the urgency target = deadline || dueDate
+  // Negative days = overdue · 0–3 = critical · 4–7 = high · 8–14 = soon · >14 = later
+  function urgencyDays(t) {
+    const d = t.deadline || t.dueDate;
+    if (!d) return null;
+    return daysUntil(d);
+  }
+  function bucketOf(t) {
+    const d = urgencyDays(t);
+    if (d === null) return 'noDate';
+    if (d < 0)  return 'overdue';
+    if (d <= 3) return 'critical';
+    if (d <= 7) return 'high';
+    if (d <= 14) return 'soon';
+    return 'later';
+  }
+
+  let pool = active;
+  if (schedPicFilter !== 'All') pool = pool.filter(t => t.pic === schedPicFilter);
+  // Sort by urgency-days ascending; null (no date) goes last
+  pool = pool.slice().sort((a, b) => {
+    const da = urgencyDays(a), db = urgencyDays(b);
+    if (da === null && db === null) return 0;
+    if (da === null) return 1;
+    if (db === null) return -1;
+    return da - db;
+  });
+
+  // Bucket counts (for KPIs)
+  const buckets = { overdue:[], critical:[], high:[], soon:[], later:[], noDate:[] };
+  pool.forEach(t => buckets[bucketOf(t)].push(t));
+
+  const PRIORITY_META = {
+    overdue:  { label:'Overdue',     color:'var(--red)',    bg:'#fee2e2' },
+    critical: { label:'Critical',    color:'#b54708',       bg:'#fef3c7' },
+    high:     { label:'High',        color:'var(--amber)',  bg:'#fef3c7' },
+    soon:     { label:'Soon',        color:'var(--blue)',   bg:'var(--blue-soft)' },
+    later:    { label:'Later',       color:'var(--green)',  bg:'var(--green-soft)' },
+    noDate:   { label:'No date',     color:'var(--text-3)', bg:'var(--gray-soft)' }
+  };
+
+  // KPI strip
+  const kpis = ['overdue','critical','high','soon','later','noDate'].map(k => {
+    const m = PRIORITY_META[k];
+    return `<div class="kpi" style="border-left:3px solid ${m.color};">
+      <div class="kpi-label" style="color:${m.color};">${m.label}</div>
+      <div class="kpi-value">${buckets[k].length}</div>
+    </div>`;
+  }).join('');
+
+  // Group rows by priority bucket for the schedule table
+  const order = ['overdue','critical','high','soon','later','noDate'];
+  const tbodyHtml = (() => {
+    if (!pool.length) return '<tr><td colspan="9" class="empty">No tasks scheduled — open a follow-up task and set a due date or deadline.</td></tr>';
+    return order.map(b => {
+      const items = buckets[b];
+      if (!items.length) return '';
+      const meta = PRIORITY_META[b];
+      const header = `<tr><td colspan="9" style="background:${meta.bg};padding:7px 14px;">
+        <strong style="color:${meta.color};font-size:12px;text-transform:uppercase;letter-spacing:.04em;">${meta.label}</strong>
+        <span style="font-size:11.5px;color:var(--text-3);font-weight:500;margin-left:6px;">${items.length} task${items.length>1?'s':''}</span>
+      </td></tr>`;
+      const rows = items.map(t => {
+        const ud = urgencyDays(t);
+        const udTxt = ud === null ? '—' : (ud < 0 ? `${Math.abs(ud)}d late` : ud === 0 ? 'today' : `${ud}d left`);
+        const udCol = ud === null ? 'var(--text-3)' : ud < 0 ? 'var(--red)' : ud <= 3 ? '#b54708' : ud <= 7 ? 'var(--amber)' : ud <= 14 ? 'var(--blue)' : 'var(--green)';
+        return `<tr style="cursor:pointer" onclick="openTaskModal('${t.id}')">
+          <td><span class="badge" style="background:${meta.bg};color:${meta.color};">${meta.label}</span></td>
+          <td><div class="cust-cell"><div class="thumb">${initials(t.project)}</div><div><div class="cust-name">${t.project||'—'}</div><div class="cust-proj">${t.customer||'—'}${t.description?' · '+t.description:''}</div></div></div></td>
+          <td>${t.pic||'—'}</td>
+          <td><span class="badge ${STATUS_BADGE[t.status]||''}">${t.status||'—'}</span></td>
+          <td>${fmtDateShort(t.date)}</td>
+          <td>${fmtDateShort(t.dueDate)}</td>
+          <td style="font-weight:600;">${fmtDateShort(t.deadline)}</td>
+          <td style="color:${udCol};font-weight:700;">${udTxt}</td>
+          <td class="hide-mobile" style="font-size:11px;color:var(--text-2);">${t.hasPhoto?'📷':''}${t.hasCPForm?'📄':''}</td>
+        </tr>`;
+      }).join('');
+      return header + rows;
+    }).join('');
+  })();
+
+  document.getElementById('content').innerHTML = `
+    <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">${kpis}</div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <div><div class="panel-title">Schedule</div><div class="panel-sub">Sorted by urgency · click a row to open the task</div></div>
+        <div class="filter-bar">
+          <span class="panel-sub" style="margin-right:4px;">PIC:</span>
+          <span class="chip ${schedPicFilter==='All'?'active':''}" onclick="setSchedPic('All')">All</span>
+          ${TEAM.map(t => `<span class="chip ${schedPicFilter===t?'active':''}" onclick="setSchedPic('${t}')">${t}</span>`).join('')}
+        </div>
+      </div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr>
+          <th>Priority</th>
+          <th>Project</th>
+          <th>PIC</th>
+          <th>Status</th>
+          <th>Start</th>
+          <th>Due (End)</th>
+          <th>Deadline</th>
+          <th>Urgency</th>
+          <th class="hide-mobile">Files</th>
+        </tr></thead>
+        <tbody>${tbodyHtml}</tbody>
+      </table></div></div>
+    </div>`;
+}
 
 let pricesFilter = "All";
 function renderPrices() {
