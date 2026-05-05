@@ -110,8 +110,11 @@ table.tbl tr:hover td{background:#fafbfc}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3);font-size:13px}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-soft);border:1px solid var(--border);border-radius:9px;overflow:hidden}
 .cal-head{background:var(--gray-soft);padding:9px 6px;text-align:center;font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
-.cal-cell{background:var(--panel);min-height:104px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden}
+.cal-cell{background:var(--panel);min-height:104px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden;cursor:pointer;transition:background .12s}
+.cal-cell:hover{background:#f0f4fc}
+.cal-cell.cal-today:hover{background:#e3edff}
 .cal-cell.cal-out{background:#fafbfd}
+.cal-cell.cal-out:hover{background:#f1f4f9}
 .cal-cell.cal-out .cal-date{color:var(--text-3);opacity:.6}
 .cal-cell.cal-weekend:not(.cal-today){background:#f9fbff}
 .cal-cell.cal-today{background:#eef4ff;box-shadow:inset 0 0 0 2px var(--accent)}
@@ -1020,8 +1023,10 @@ function setPicFilter(p) { tasksPicFilter = p; render(); }
 // ─────────────────────────────────────── Follow-up Schedule (calendar template) ───
 let schedPicFilter = 'All';
 let schedMonth = null; // YYYY-MM, null = current month
+let schedDay   = null; // YYYY-MM-DD, when set the schedule renders a single-day detail
 function setSchedPic(p)   { schedPicFilter = p; render(); }
-function setSchedMonth(m) { schedMonth = m;     render(); }
+function setSchedMonth(m) { schedMonth = m; schedDay = null; render(); }
+function setSchedDay(d)   { schedDay = d; render(); }
 
 function renderSchedule() {
   const PRIORITY_META = {
@@ -1058,6 +1063,85 @@ function renderSchedule() {
       <div class="kpi-value">${buckets[k].length}</div>
     </div>`;
   }).join('');
+
+  // ── DAY VIEW BRANCH ─────────────────────────────────
+  // When a calendar cell is clicked we render a focused single-day detail panel.
+  if (schedDay) {
+    const day = schedDay;
+    const dayTasks = pool
+      .filter(t => t.deadline === day || t.dueDate === day || t.date === day)
+      .map(t => ({
+        task: t,
+        reasons: [
+          t.deadline === day ? 'deadline' : null,
+          t.dueDate  === day ? 'due'      : null,
+          t.date     === day ? 'starting' : null
+        ].filter(Boolean)
+      }));
+    const reasonOrder = { deadline: 0, due: 1, starting: 2 };
+    dayTasks.sort((a, b) => reasonOrder[a.reasons[0]] - reasonOrder[b.reasons[0]]);
+
+    const REASON_META = {
+      deadline: { text: 'DEADLINE', color: 'var(--red)',   bg: '#fee2e2' },
+      due:      { text: 'DUE',      color: 'var(--blue)',  bg: 'var(--blue-soft)' },
+      starting: { text: 'STARTING', color: 'var(--green)', bg: 'var(--green-soft)' }
+    };
+    const dayLabel = new Date(day).toLocaleDateString('en-US',
+      { weekday:'long', month:'long', day:'numeric', year:'numeric' });
+    const monthOfDay = day.slice(0,7);
+    const monthOfDayLabel = new Date(day).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+
+    const cardsHtml = dayTasks.map(({ task: t, reasons }) => {
+      const meta = PRIORITY_META[bucketOf(t)];
+      const ud = urgencyDays(t);
+      const udTxt = ud === null ? '—' : (ud < 0 ? `${Math.abs(ud)}d late` : ud === 0 ? 'today' : `${ud}d left`);
+      return `<div onclick="openTaskModal('${t.id}')" style="cursor:pointer;border-left:4px solid ${meta.color};background:var(--bg);border-radius:9px;padding:12px 14px;display:flex;align-items:flex-start;gap:14px;">
+        <div class="thumb">${initials(t.project)}</div>
+        <div style="flex:1;min-width:0;">
+          <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+            <strong style="font-size:14px;">${t.project || '—'}</strong>
+            <span style="color:var(--text-3);font-size:12.5px;">${t.customer || ''}</span>
+            ${reasons.map(r => `<span class="badge" style="background:${REASON_META[r].bg};color:${REASON_META[r].color};">${REASON_META[r].text}</span>`).join('')}
+            <span class="badge ${STATUS_BADGE[t.status]||''}">${t.status||'—'}</span>
+          </div>
+          ${t.description ? `<div style="font-size:12px;color:var(--text-3);margin-top:3px;">${t.description}</div>` : ''}
+          <div style="font-size:11.5px;color:var(--text-2);margin-top:6px;display:flex;gap:14px;flex-wrap:wrap;">
+            <span>PIC: <strong>${t.pic||'—'}</strong></span>
+            <span>Start: <strong>${fmtDateShort(t.date)}</strong></span>
+            <span>Due: <strong>${fmtDateShort(t.dueDate)}</strong></span>
+            <span>Deadline: <strong>${fmtDateShort(t.deadline)}</strong></span>
+          </div>
+        </div>
+        <div style="text-align:right;flex-shrink:0;">
+          <div style="font-weight:700;color:${meta.color};font-size:13.5px;">${udTxt}</div>
+          <div style="font-size:10.5px;font-weight:600;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;margin-top:2px;">${meta.label}</div>
+        </div>
+      </div>`;
+    }).join('');
+
+    document.getElementById('content').innerHTML = `
+      <div class="kpi-grid" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));">${kpis}</div>
+
+      <div class="panel">
+        <div class="panel-head" style="gap:14px;">
+          <button class="btn" onclick="setSchedMonth('${monthOfDay}')" title="Back to ${monthOfDayLabel}">← Back</button>
+          <div style="flex:1;min-width:0;">
+            <div class="panel-title">${dayLabel}</div>
+            <div class="panel-sub">${dayTasks.length} task${dayTasks.length===1?'':'s'} on this date${schedPicFilter!=='All'?` · PIC: ${schedPicFilter}`:''}</div>
+          </div>
+        </div>
+        <div class="panel-head" style="border-top:1px solid var(--border-soft);background:#fafbfc;"><div class="panel-sub">PIC:</div>
+          <div class="filter-bar">
+            <span class="chip ${schedPicFilter==='All'?'active':''}" onclick="setSchedPic('All')">All</span>
+            ${TEAM.map(t => `<span class="chip ${schedPicFilter===t?'active':''}" onclick="setSchedPic('${t}')">${t}</span>`).join('')}
+          </div>
+        </div>
+        <div class="panel-body" style="display:grid;gap:10px;">
+          ${cardsHtml || '<div class="empty">No tasks scheduled on this day</div>'}
+        </div>
+      </div>`;
+    return;
+  }
 
   // Calendar month state — defaults to current month
   const ym = schedMonth || todayISO().slice(0,7);
@@ -1118,7 +1202,7 @@ function renderSchedule() {
         );
         const visible = ts.slice(0, 4);
         const extra = ts.length - visible.length;
-        return `<div class="cal-cell ${c.inMonth?'':'cal-out'} ${c.isToday?'cal-today':''} ${c.isWeekend?'cal-weekend':''}">
+        return `<div class="cal-cell ${c.inMonth?'':'cal-out'} ${c.isToday?'cal-today':''} ${c.isWeekend?'cal-weekend':''}" onclick="setSchedDay('${c.iso}')" title="View ${c.iso}">
           <span class="cal-date">${c.day}</span>
           ${visible.map(taskPill).join('')}
           ${extra > 0 ? `<div class="cal-more" title="${ts.slice(4).map(t => (t.project||'—')).join('\n')}">+ ${extra} more</div>` : ''}
