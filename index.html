@@ -108,6 +108,29 @@ table.tbl tr:hover td{background:#fafbfc}
 .deadline-cell{display:flex;flex-direction:column;gap:2px}.deadline-cell .days{font-size:11px;font-weight:600}
 .days-ok{color:var(--green)}.days-warn{color:var(--amber)}.days-late{color:var(--red)}
 .empty{text-align:center;padding:40px 20px;color:var(--text-3);font-size:13px}
+/* Analytics-style KPI cards & charts */
+.an-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin-bottom:18px}
+.an-kpi{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;box-shadow:var(--shadow-sm);position:relative;overflow:hidden}
+.an-kpi::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--bar-color,var(--accent))}
+.an-kpi-head{display:flex;justify-content:space-between;align-items:flex-start;gap:10px}
+.an-kpi-label{font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;font-weight:700}
+.an-kpi-value{font-size:24px;font-weight:700;margin-top:6px;font-variant-numeric:tabular-nums;line-height:1.1}
+.an-kpi-sub{font-size:11.5px;color:var(--text-3);margin-top:4px;font-weight:500}
+.an-kpi-delta{font-size:11.5px;font-weight:700;margin-top:6px;display:inline-flex;align-items:center;gap:3px;font-variant-numeric:tabular-nums}
+.an-grid-2{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:18px}
+.bar-row{display:flex;align-items:center;gap:10px;margin-bottom:7px;padding:0 2px}
+.bar-row-label{flex:0 0 110px;font-size:12px;color:var(--text);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.bar-row-track{flex:1;height:16px;background:var(--gray-soft);border-radius:4px;overflow:hidden;position:relative;min-width:60px}
+.bar-row-fill{height:100%;border-radius:4px;transition:width .4s ease}
+.bar-row-val{flex:0 0 88px;text-align:right;font-size:11.5px;font-weight:700;font-variant-numeric:tabular-nums;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+.bar-row-val.muted{color:var(--text-3);font-weight:500}
+.income-row{display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--border-soft)}
+.income-row:last-child{border-bottom:none}
+.income-row .lbl{flex:0 0 130px;font-size:12px;color:var(--text-2);font-weight:600;text-transform:uppercase;letter-spacing:.03em}
+.income-row .track{flex:1;height:14px;background:var(--gray-soft);border-radius:7px;overflow:hidden;position:relative}
+.income-row .fill{height:100%;border-radius:7px}
+.income-row .val{flex:0 0 130px;text-align:right;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
+@media(max-width:880px){.an-grid-2{grid-template-columns:1fr}.bar-row-label{flex:0 0 90px}.bar-row-val{flex:0 0 70px}.income-row .lbl,.income-row .val{flex:0 0 90px;font-size:12px}}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-soft);border:1px solid var(--border);border-radius:9px;overflow:hidden}
 .cal-head{background:var(--gray-soft);padding:9px 6px;text-align:center;font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
 .cal-cell{background:var(--panel);min-height:104px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden;cursor:pointer;transition:background .12s}
@@ -680,69 +703,105 @@ function renderDashboard() {
   // Trend data: last 12 months in chronological order
   const trend = monthRows.slice().sort((a,b) => a.month.localeCompare(b.month)).slice(-12);
 
-  const pct = (a,b) => b>0 ? ((a-b)/b*100) : 0;
-  const yoyHtml = yearRows.length >= 2 ? (() => {
-    const cur = yearRows[0], prev = yearRows[1];
-    const dRev = pct(cur.revenue, prev.revenue);
-    const dProf= pct(cur.profit,  prev.profit);
-    const arrow = v => v>=0 ? '▲' : '▼';
-    const col   = v => v>=0 ? 'var(--green)' : 'var(--red)';
-    return `<div class="panel">
+  // YoY deltas (used in KPI cards)
+  const pct = (a,b) => b>0 ? ((a-b)/b*100) : (b===0 && a>0 ? 100 : 0);
+  const cur  = yearRows[0] || null;
+  const prev = yearRows[1] || null;
+  const dRev  = (cur && prev) ? pct(cur.revenue, prev.revenue) : null;
+  const dProf = (cur && prev) ? pct(cur.profit,  prev.profit)  : null;
+
+  // Sparkline data: last 12 months in chronological order (already = trend)
+  const sparkRev  = trend.map(t => t.revenue);
+  const sparkProf = trend.map(t => t.profit);
+  const sparkMargin = trend.map(t => t.margin);
+
+  const arrow = v => v >= 0 ? '▲' : '▼';
+  const dCol  = v => v >= 0 ? 'var(--green)' : 'var(--red)';
+  const deltaPill = v => v === null ? '<span style="color:var(--text-3);">no prior data</span>'
+    : `<span style="color:${dCol(v)};">${arrow(v)} ${Math.abs(v).toFixed(1)}% YoY</span>`;
+
+  const yoyHtml = (cur && prev) ? `<div class="panel">
       <div class="panel-head"><div><div class="panel-title">Year over Year</div><div class="panel-sub">${cur.year} vs ${prev.year}</div></div></div>
       <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;">
-        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Revenue</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${fmtKipShort(cur.revenue)}</div><div style="font-size:12px;color:${col(dRev)};font-weight:600;">${arrow(dRev)} ${Math.abs(dRev).toFixed(1)}% vs ${prev.year}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Profit</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:${cur.profit>=0?'var(--green)':'var(--red)'};">${fmtKipShort(cur.profit)}</div><div style="font-size:12px;color:${col(dProf)};font-weight:600;">${arrow(dProf)} ${Math.abs(dProf).toFixed(1)}% vs ${prev.year}</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Margin</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${cur.margin.toFixed(1)}%</div><div style="font-size:12px;color:var(--text-3);">prev: ${prev.margin.toFixed(1)}%</div></div>
-        <div><div style="font-size:11px;color:var(--text-3);text-transform:uppercase;letter-spacing:.04em;">${cur.year} Entries</div><div style="font-size:18px;font-weight:700;margin-top:4px;">${cur.count}</div><div style="font-size:12px;color:var(--text-3);">prev: ${prev.count}</div></div>
+        <div><div class="an-kpi-label">${cur.year} Revenue</div><div style="font-size:18px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;">${fmtKipShort(cur.revenue)}</div><div class="an-kpi-delta" style="color:${dCol(dRev)};">${arrow(dRev)} ${Math.abs(dRev).toFixed(1)}% vs ${prev.year}</div></div>
+        <div><div class="an-kpi-label">${cur.year} Profit</div><div style="font-size:18px;font-weight:700;margin-top:4px;color:${cur.profit>=0?'var(--green)':'var(--red)'};font-variant-numeric:tabular-nums;">${fmtKipShort(cur.profit)}</div><div class="an-kpi-delta" style="color:${dCol(dProf)};">${arrow(dProf)} ${Math.abs(dProf).toFixed(1)}% vs ${prev.year}</div></div>
+        <div><div class="an-kpi-label">${cur.year} Margin</div><div style="font-size:18px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;">${cur.margin.toFixed(1)}%</div><div class="an-kpi-sub">prev: ${prev.margin.toFixed(1)}%</div></div>
+        <div><div class="an-kpi-label">${cur.year} Entries</div><div style="font-size:18px;font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums;">${cur.count}</div><div class="an-kpi-sub">prev: ${prev.count}</div></div>
       </div>
-    </div>`;
-  })() : '';
+    </div>` : '';
 
   document.getElementById('content').innerHTML = `
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${STATEMENT.length} entries · ${profitable} 🟢 ${losing} 🔴</div></div>
-      <div class="kpi"><div class="kpi-label">Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div><div class="kpi-delta" style="color:var(--text-3);">Margin ${margin.toFixed(1)}%</div></div>
-      <div class="kpi"><div class="kpi-label">Done · Recognised</div><div class="kpi-value" style="color:var(--green)">${fmtKipShort(doneRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${done.length} jobs · profit ${fmtKipShort(doneProf)}</div></div>
-      <div class="kpi"><div class="kpi-label">Pipeline</div><div class="kpi-value" style="color:var(--amber)">${fmtKipShort(pipeRev)}</div><div class="kpi-delta" style="color:var(--text-3);">${pipeline.length} in progress · profit ${fmtKipShort(pipeProf)}</div></div>
-      <div class="kpi"><div class="kpi-label">Avg Deal</div><div class="kpi-value">${fmtKipShort(avgDeal)}</div><div class="kpi-delta" style="color:var(--text-3);">Per entry</div></div>
-      <div class="kpi"><div class="kpi-label">Customers</div><div class="kpi-value">${custRows.length}</div><div class="kpi-delta" style="color:var(--text-3);">Top: ${topCustomer ? topCustomer.name : '—'}</div></div>
-      <div class="kpi"><div class="kpi-label">Best Month</div><div class="kpi-value" style="font-size:16px;">${bestMonth ? bestMonth.month : '—'}</div><div class="kpi-delta" style="color:var(--green);">${bestMonth ? fmtKipShort(bestMonth.profit) : ''}</div></div>
-      <div class="kpi"><div class="kpi-label">Biggest Deal</div><div class="kpi-value" style="font-size:16px;">${biggestDeal ? biggestDeal.project : '—'}</div><div class="kpi-delta" style="color:var(--text-3);">${biggestDeal ? fmtKipShort(biggestDeal.revenue) : ''}</div></div>
+    <div class="an-grid">
+      <div class="an-kpi" style="--bar-color:var(--accent);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Total Revenue</div><div class="an-kpi-value">${fmtKipShort(totalRev)}</div></div>
+          ${sparkLine(sparkRev,'#142a5f','rgba(20,42,95,.14)')}
+        </div>
+        <div class="an-kpi-delta">${deltaPill(dRev)}<span style="color:var(--text-3);font-weight:500;margin-left:6px;">· ${STATEMENT.length} entries</span></div>
+      </div>
+      <div class="an-kpi" style="--bar-color:${totalProf>=0?'var(--green)':'var(--red)'};">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Total Profit</div><div class="an-kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'};">${fmtKipShort(totalProf)}</div></div>
+          ${sparkLine(sparkProf,'#10b981','rgba(16,185,129,.16)')}
+        </div>
+        <div class="an-kpi-delta">${deltaPill(dProf)}<span style="color:var(--text-3);font-weight:500;margin-left:6px;">· margin ${margin.toFixed(1)}%</span></div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--green);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Recognised (Done)</div><div class="an-kpi-value" style="color:var(--green);">${fmtKipShort(doneRev)}</div></div>
+        </div>
+        <div class="an-kpi-sub">${done.length} jobs · profit <strong style="color:var(--green);">${fmtKipShort(doneProf)}</strong></div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--amber);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Pipeline (open)</div><div class="an-kpi-value" style="color:var(--amber);">${fmtKipShort(pipeRev)}</div></div>
+        </div>
+        <div class="an-kpi-sub">${pipeline.length} in progress · expected profit <strong>${fmtKipShort(pipeProf)}</strong></div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--blue);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Avg Deal Size</div><div class="an-kpi-value">${fmtKipShort(avgDeal)}</div></div>
+        </div>
+        <div class="an-kpi-sub">${profitable} 🟢 profitable · ${losing} 🔴 loss</div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--purple);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Customers</div><div class="an-kpi-value">${custRows.length}</div></div>
+        </div>
+        <div class="an-kpi-sub">Top: <strong>${topCustomer ? topCustomer.name : '—'}</strong>${topCustomer?` · ${fmtKipShort(topCustomer.revenue)}`:''}</div>
+      </div>
+    </div>
+
+    <div class="an-grid-2">
+      <div class="chart-box">
+        <h3>Monthly Revenue &amp; Profit</h3>
+        <p>Last ${trend.length} months · trend</p>
+        <div class="chart-canvas-wrap" style="height:300px;"><canvas id="trend-chart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <h3>Revenue by Status</h3>
+        <p>Pipeline composition · ₭ in millions</p>
+        <div class="chart-canvas-wrap" style="height:300px;"><canvas id="status-donut"></canvas></div>
+      </div>
     </div>
 
     <div class="chart-box" style="margin-bottom:18px;">
-      <h3>Monthly Trend</h3>
-      <p>Revenue &amp; profit · last ${trend.length} months</p>
-      <div class="chart-canvas-wrap" style="height:280px;"><canvas id="trend-chart"></canvas></div>
+      <h3>Top 10 Customers</h3>
+      <p>Sorted by revenue · profit shown to the right</p>
+      <div style="margin-top:10px;">${topCustomersBarsHtml(custRows, 10)}</div>
     </div>
 
     ${yoyHtml}
 
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">By Status</div><div class="panel-sub">Pipeline maturity</div></div></div>
-      <div class="panel-body" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">
-        ${statusRows.map(r => {
-          const colorMap = {Done:'var(--green)',Production:'var(--blue)',Sample:'var(--purple)',Quotation:'var(--amber)'};
-          const c = colorMap[r.status] || 'var(--text-3)';
-          const m = r.revenue>0 ? r.profit/r.revenue*100 : 0;
-          return `<div style="border-left:3px solid ${c};padding:8px 12px;background:var(--bg);border-radius:6px;">
-            <div style="font-size:12px;color:${c};font-weight:700;text-transform:uppercase;letter-spacing:.04em;">${r.status}</div>
-            <div style="font-size:18px;font-weight:700;margin-top:4px;">${fmtKipShort(r.revenue)}</div>
-            <div style="font-size:11.5px;color:var(--text-3);">${r.count} rows · profit <strong style="color:${r.profit>=0?'var(--green)':'var(--red)'}">${fmtKipShort(r.profit)}</strong> · ${m.toFixed(1)}%</div>
-          </div>`;
-        }).join('') || '<div class="empty">No data</div>'}
-      </div>
-    </div>
-
-    <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">Top 10 Products</div><div class="panel-sub">Aggregated by project name · sorted by profit</div></div></div>
+      <div class="panel-head"><div><div class="panel-title">Top 10 Products</div><div class="panel-sub">By project name · sorted by profit</div></div></div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Project</th><th class="hide-mobile">Entries</th><th>Revenue</th><th>Profit</th><th class="hide-mobile">Margin</th></tr></thead>
         <tbody>${projRows.map(r => `<tr>
           <td><div class="cust-cell"><div class="thumb">${initials(r.name)}</div><div class="cust-name">${r.name}</div></div></td>
           <td class="hide-mobile">${r.count}</td>
-          <td><strong>${fmtKipShort(r.revenue)}</strong></td>
-          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;">${fmtKipShort(r.profit)}</td>
+          <td style="font-variant-numeric:tabular-nums;"><strong>${fmtKipShort(r.revenue)}</strong></td>
+          <td style="color:${r.profit>=0?'var(--green)':'var(--red)'};font-weight:600;font-variant-numeric:tabular-nums;">${fmtKipShort(r.profit)}</td>
           <td class="hide-mobile">${r.margin.toFixed(1)}%</td>
         </tr>`).join('') || '<tr><td colspan="5" class="empty">No data</td></tr>'}</tbody>
       </table></div></div>
@@ -808,6 +867,7 @@ function renderDashboard() {
     </div>`:''}`;
 
   drawTrendChart(trend);
+  drawStatusDonut(statusRows);
 }
 
 function drawTrendChart(trend) {
@@ -843,6 +903,99 @@ function drawTrendChart(trend) {
       }
     }
   });
+}
+
+// ───── Analytics helpers (inline SVG sparklines + Chart.js donut/cumulative) ─────
+function sparkLine(values, stroke, fill, w=92, h=30) {
+  if (!values || !values.length) return '';
+  const min = Math.min(...values), max = Math.max(...values);
+  const range = (max - min) || 1;
+  const step = (w - 2) / Math.max(1, values.length - 1);
+  const pts = values.map((v, i) => {
+    const x = 1 + i * step;
+    const y = h - 1 - ((v - min) / range) * (h - 4);
+    return [x, y];
+  });
+  const lp = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const ap = lp + ` L${pts.at(-1)[0].toFixed(1)},${h} L${pts[0][0].toFixed(1)},${h} Z`;
+  return `<svg width="${w}" height="${h}" viewBox="0 0 ${w} ${h}" style="display:block;flex-shrink:0;">
+    ${fill ? `<path d="${ap}" fill="${fill}"/>` : ''}
+    <path d="${lp}" fill="none" stroke="${stroke}" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"/>
+  </svg>`;
+}
+
+function drawStatusDonut(rows) {
+  const el = document.getElementById('status-donut');
+  if (!el || !rows.length || typeof Chart === 'undefined') return;
+  const colors = { Done:'#10b981', Production:'#3b82f6', Sample:'#8b5cf6', Quotation:'#f59e0b' };
+  charts.statusDonut = new Chart(el, {
+    type: 'doughnut',
+    data: {
+      labels: rows.map(r => r.status),
+      datasets: [{
+        data: rows.map(r => Math.round(r.revenue / 1e6)),
+        backgroundColor: rows.map(r => colors[r.status] || '#94a3b8'),
+        borderWidth: 2, borderColor: '#fff', hoverOffset: 6
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '66%',
+      plugins: {
+        legend: { position:'bottom', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:8, font:{ size:11.5 }, color:'#475569', padding:12 } },
+        tooltip: { backgroundColor:'#0f172a', padding:10, displayColors:false,
+          callbacks: { label: c => ` ${c.label}: ₭${c.parsed.toLocaleString()}M` } }
+      }
+    }
+  });
+}
+
+function drawCumulativeChart(canvasId, monthAsc) {
+  const el = document.getElementById(canvasId);
+  if (!el || !monthAsc.length || typeof Chart === 'undefined') return;
+  let cumRev = 0, cumProf = 0;
+  const labels = monthAsc.map(m => m.month);
+  const revData = monthAsc.map(m => { cumRev += m.revenue; return Math.round(cumRev/1e6); });
+  const profData = monthAsc.map(m => { cumProf += m.profit; return Math.round(cumProf/1e6); });
+  const ctx = el.getContext('2d');
+  const grad1 = ctx.createLinearGradient(0,0,0,260); grad1.addColorStop(0,'rgba(20,42,95,.18)'); grad1.addColorStop(1,'rgba(20,42,95,0)');
+  const grad2 = ctx.createLinearGradient(0,0,0,260); grad2.addColorStop(0,'rgba(16,185,129,.22)'); grad2.addColorStop(1,'rgba(16,185,129,0)');
+  charts[canvasId] = new Chart(el, {
+    type: 'line',
+    data: { labels, datasets: [
+      { label:'Cumulative Revenue', data:revData, borderColor:'#142a5f', backgroundColor:grad1, borderWidth:2, tension:.3, fill:true, pointRadius:0, pointHoverRadius:4 },
+      { label:'Cumulative Profit',  data:profData, borderColor:'#10b981', backgroundColor:grad2, borderWidth:2, tension:.3, fill:true, pointRadius:0, pointHoverRadius:4 }
+    ]},
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      interaction:{ mode:'index', intersect:false },
+      plugins: {
+        legend: { position:'top', align:'end', labels:{ usePointStyle:true, pointStyle:'circle', boxWidth:8, font:{ size:11.5 }, color:'#475569' } },
+        tooltip: { backgroundColor:'#0f172a', padding:10, displayColors:false, callbacks:{ label: c => ` ${c.dataset.label}: ₭${c.parsed.y.toLocaleString()}M` } }
+      },
+      scales: {
+        x: { grid:{ display:false }, ticks:{ color:'#7c869a', font:{ size:11 } }, border:{ display:false } },
+        y: { grid:{ color:'rgba(221,227,238,.6)' }, ticks:{ color:'#7c869a', font:{ size:11 }, callback: v => '₭'+v+'M' }, border:{ display:false } }
+      }
+    }
+  });
+}
+
+function topCustomersBarsHtml(rows, max=10) {
+  const top = rows.slice(0, max);
+  if (!top.length) return '<div class="empty">No data</div>';
+  const maxRev = Math.max(...top.map(r => r.revenue));
+  return top.map(r => {
+    const pct = Math.max(2, (r.revenue / maxRev) * 100);
+    const fillCol = r.profit >= 0
+      ? 'linear-gradient(90deg,#142a5f,#1e40af)'
+      : 'linear-gradient(90deg,#dc2626,#ef4444)';
+    return `<div class="bar-row" title="${(r.name||'').replace(/"/g,'&quot;')}: ${fmtKipShort(r.revenue)} revenue · ${fmtKipShort(r.profit)} profit">
+      <div class="bar-row-label">${r.name||'—'}</div>
+      <div class="bar-row-track"><div class="bar-row-fill" style="width:${pct}%;background:${fillCol};"></div></div>
+      <div class="bar-row-val">${fmtKipShort(r.revenue)}</div>
+      <div class="bar-row-val muted" style="color:${r.profit>=0?'var(--green)':'var(--red)'};">${fmtKipShort(r.profit)}</div>
+    </div>`;
+  }).join('');
 }
 
 function renderStatement() {
@@ -890,13 +1043,79 @@ function renderStatement() {
 
   const lineItems = done.slice().sort((a,b) => (b.date||'').localeCompare(a.date||''));
 
+  // Total cost across all Done rows = revenue minus profit
+  const totalCost = totalRev - totalProf;
+  // Avg deal + monthly velocity (last 12 mo)
+  const avgDealFS = done.length > 0 ? totalRev / done.length : 0;
+  const last12 = monthAsc.slice(-12);
+  const last12Rev  = last12.reduce((s,m) => s + m.revenue, 0);
+  const last12Prof = last12.reduce((s,m) => s + m.profit,  0);
+  // Sparkline series for the Statement KPIs (last 12 months)
+  const fsSparkRev  = last12.map(m => m.revenue);
+  const fsSparkProf = last12.map(m => m.profit);
+  // Income-statement bar widths (Revenue is 100%; Cost & Profit relative to it)
+  const costPct   = totalRev > 0 ? Math.max(0, Math.min(100, (totalCost  / totalRev) * 100)) : 0;
+  const profitPct = totalRev > 0 ? Math.max(0, Math.min(100, (totalProf  / totalRev) * 100)) : 0;
+  // Monthly aggregation for the cumulative chart — current year only when we have one
+  const curYear = (monthAsc[monthAsc.length-1]?.month || todayISO()).slice(0,4);
+  const cumMonths = monthAsc.filter(m => m.month.startsWith(curYear));
+
   document.getElementById('content').innerHTML = `
-    <div class="kpi-grid">
-      <div class="kpi"><div class="kpi-label">Total Revenue</div><div class="kpi-value">${fmtKipShort(totalRev)}</div></div>
-      <div class="kpi"><div class="kpi-label">Total Profit</div><div class="kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'}">${fmtKipShort(totalProf)}</div></div>
-      <div class="kpi"><div class="kpi-label">Margin</div><div class="kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'}">${margin.toFixed(1)}%</div></div>
-      <div class="kpi"><div class="kpi-label">Completed Jobs</div><div class="kpi-value">${done.length}</div></div>
+    <div class="an-grid">
+      <div class="an-kpi" style="--bar-color:var(--accent);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Total Revenue</div><div class="an-kpi-value">${fmtKipShort(totalRev)}</div></div>
+          ${sparkLine(fsSparkRev,'#142a5f','rgba(20,42,95,.14)')}
+        </div>
+        <div class="an-kpi-sub">${done.length} completed jobs · last 12 mo: ${fmtKipShort(last12Rev)}</div>
+      </div>
+      <div class="an-kpi" style="--bar-color:${totalProf>=0?'var(--green)':'var(--red)'};">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Total Profit</div><div class="an-kpi-value" style="color:${totalProf>=0?'var(--green)':'var(--red)'};">${fmtKipShort(totalProf)}</div></div>
+          ${sparkLine(fsSparkProf,'#10b981','rgba(16,185,129,.16)')}
+        </div>
+        <div class="an-kpi-sub">last 12 mo profit: <strong>${fmtKipShort(last12Prof)}</strong></div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--blue);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Gross Margin</div><div class="an-kpi-value" style="color:${margin>=0?'var(--green)':'var(--red)'};">${margin.toFixed(1)}%</div></div>
+        </div>
+        <div class="an-kpi-sub">cost / revenue ratio: ${totalRev>0 ? ((totalCost/totalRev)*100).toFixed(1) : '0.0'}%</div>
+      </div>
+      <div class="an-kpi" style="--bar-color:var(--purple);">
+        <div class="an-kpi-head">
+          <div><div class="an-kpi-label">Avg Deal</div><div class="an-kpi-value">${fmtKipShort(avgDealFS)}</div></div>
+        </div>
+        <div class="an-kpi-sub">Done jobs only · ${monthAsc.length} months tracked</div>
+      </div>
     </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Income Statement</div><div class="panel-sub">All recognised (Done) revenue, cost &amp; profit</div></div></div>
+      <div class="panel-body" style="padding:6px 18px;">
+        <div class="income-row">
+          <div class="lbl" style="color:var(--accent);">Revenue</div>
+          <div class="track"><div class="fill" style="width:100%;background:linear-gradient(90deg,#142a5f,#1e40af);"></div></div>
+          <div class="val">${fmtKipShort(totalRev)}</div>
+        </div>
+        <div class="income-row">
+          <div class="lbl" style="color:var(--red);">− Cost</div>
+          <div class="track"><div class="fill" style="width:${costPct}%;background:linear-gradient(90deg,#dc2626,#ef4444);"></div></div>
+          <div class="val" style="color:var(--red);">${fmtKipShort(totalCost)}</div>
+        </div>
+        <div class="income-row" style="border-top:2px solid var(--border-soft);">
+          <div class="lbl" style="color:${totalProf>=0?'var(--green)':'var(--red)'};">= Profit</div>
+          <div class="track"><div class="fill" style="width:${Math.abs(profitPct)}%;background:linear-gradient(90deg,#059669,#10b981);"></div></div>
+          <div class="val" style="color:${totalProf>=0?'var(--green)':'var(--red)'};">${fmtKipShort(totalProf)}</div>
+        </div>
+      </div>
+    </div>
+
+    ${cumMonths.length > 0 ? `<div class="chart-box" style="margin-bottom:18px;">
+      <h3>${curYear} Cumulative Performance</h3>
+      <p>Year-to-date revenue &amp; profit, accumulated month over month</p>
+      <div class="chart-canvas-wrap" style="height:300px;"><canvas id="cum-chart"></canvas></div>
+    </div>` : ''}
 
     <div class="panel">
       <div class="panel-head"><div><div class="panel-title">Monthly Breakdown</div><div class="panel-sub">${monthRows.length} months · Done jobs only · revenue, cost, profit, customers &amp; vs-prev delta</div></div></div>
@@ -946,6 +1165,8 @@ function renderStatement() {
         </tr>`).join('') || '<tr><td colspan="5" class="empty">Mark a Product Price entry as Done to see it here</td></tr>'}</tbody>
       </table></div></div>
     </div>`;
+
+  if (cumMonths.length > 0) drawCumulativeChart('cum-chart', cumMonths);
 }
 
 let tasksFilter = "All", tasksPicFilter = "All";
