@@ -1180,7 +1180,8 @@ function renderTasks() {
   STATUSES_TASK.forEach(s => sCounts[s] = visibleTasks.filter(t => t.status === s).length);
   let filtered = visibleTasks.slice();
   if (tasksFilter!=="All") filtered = filtered.filter(t => t.status === tasksFilter);
-  if (tasksPicFilter!=="All") filtered = filtered.filter(t => t.pic === tasksPicFilter);
+  if (tasksPicFilter==='__unassigned') filtered = filtered.filter(t => !t.pic);
+  else if (tasksPicFilter!=="All") filtered = filtered.filter(t => t.pic === tasksPicFilter);
   filtered.sort((a,b) => {
     const ca = (a.customer||'').toLowerCase(), cb = (b.customer||'').toLowerCase();
     if (ca !== cb) return ca.localeCompare(cb);
@@ -1189,6 +1190,13 @@ function renderTasks() {
 
   // Status chips exclude Invoice (those tasks live in Product Price now)
   const chipStatuses = STATUSES_TASK.filter(s => s !== 'Invoice' && s !== 'Invoices');
+
+  // PIC chip counts respect the active status filter — so each chip shows what you'd
+  // see after clicking it. Tasks without a PIC are bucketed under "Unassigned".
+  const picScope = tasksFilter === 'All' ? visibleTasks : visibleTasks.filter(t => t.status === tasksFilter);
+  const picCounts = {};
+  TEAM.forEach(p => picCounts[p] = picScope.filter(t => t.pic === p).length);
+  const unassignedCount = picScope.filter(t => !t.pic).length;
 
   document.getElementById('content').innerHTML = `
     <div class="panel">
@@ -1199,7 +1207,11 @@ function renderTasks() {
         </div>
       </div>
       <div class="panel-head" style="border-top:1px solid var(--border-soft);background:#fafbfc;"><div class="panel-sub">PIC:</div>
-        <div class="filter-bar"><span class="chip ${tasksPicFilter==='All'?'active':''}" onclick="setPicFilter('All')">All</span>${TEAM.map(t => `<span class="chip ${tasksPicFilter===t?'active':''}" onclick="setPicFilter('${t}')">${t}</span>`).join('')}</div>
+        <div class="filter-bar">
+          <span class="chip ${tasksPicFilter==='All'?'active':''}" onclick="setPicFilter('All')">All<span class="count">${picScope.length}</span></span>
+          ${TEAM.map(t => `<span class="chip ${tasksPicFilter===t?'active':''}" onclick="setPicFilter('${t}')">${t}<span class="count">${picCounts[t]}</span></span>`).join('')}
+          ${unassignedCount > 0 ? `<span class="chip ${tasksPicFilter==='__unassigned'?'active':''}" onclick="setPicFilter('__unassigned')" title="Tasks with no PIC assigned">Unassigned<span class="count">${unassignedCount}</span></span>` : ''}
+        </div>
       </div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Project</th><th>PIC</th><th class="hide-mobile">Unit</th><th class="hide-mobile">¥/u</th><th class="hide-mobile">Sample¥</th><th>Status</th><th>Date</th><th class="hide-mobile">Files</th></tr></thead>
