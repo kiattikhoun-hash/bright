@@ -131,10 +131,6 @@ table.tbl tr:hover td{background:#fafbfc}
 .income-row .fill{height:100%;border-radius:7px}
 .income-row .val{flex:0 0 130px;text-align:right;font-size:15px;font-weight:700;font-variant-numeric:tabular-nums}
 @media(max-width:880px){.an-grid-2{grid-template-columns:1fr}.bar-row-label{flex:0 0 90px}.bar-row-val{flex:0 0 70px}.income-row .lbl,.income-row .val{flex:0 0 90px;font-size:12px}}
-.live-pulse{display:inline-flex;align-items:center;gap:6px;font-size:10.5px;font-weight:700;color:var(--green);text-transform:uppercase;letter-spacing:.05em}
-.live-pulse::before{content:"";width:8px;height:8px;border-radius:50%;background:var(--green);animation:livepulse 1.6s infinite;box-shadow:0 0 0 0 rgba(16,185,129,.5)}
-.live-pulse .lp-time{color:var(--text-3);font-weight:500;text-transform:none;letter-spacing:0;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px}
-@keyframes livepulse{0%{box-shadow:0 0 0 0 rgba(16,185,129,.6)}70%{box-shadow:0 0 0 8px rgba(16,185,129,0)}100%{box-shadow:0 0 0 0 rgba(16,185,129,0)}}
 .cal-grid{display:grid;grid-template-columns:repeat(7,1fr);gap:1px;background:var(--border-soft);border:1px solid var(--border);border-radius:9px;overflow:hidden}
 .cal-head{background:var(--gray-soft);padding:9px 6px;text-align:center;font-size:11px;font-weight:700;color:var(--text-2);text-transform:uppercase;letter-spacing:.04em}
 .cal-cell{background:var(--panel);min-height:104px;padding:5px 6px;display:flex;flex-direction:column;gap:3px;overflow:hidden;cursor:pointer;transition:background .12s}
@@ -496,13 +492,15 @@ let CUSTOMERS = [...new Set([...TASKS.map(t=>t.customer),...PRICES.map(p=>p.cust
 const fmtKip = n => "₭"+Math.round(n||0).toLocaleString('en-US');
 const fmtKipShort = n => { const v = Math.abs(n||0); if (v>=1e9) return "₭"+(n/1e9).toFixed(1)+"B"; if (v>=1e6) return "₭"+(n/1e6).toFixed(1)+"M"; if (v>=1e3) return "₭"+(n/1e3).toFixed(0)+"K"; return "₭"+(n||0); };
 const fmtNum = n => (n||0).toLocaleString('en-US');
-const fmtDate = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}); };
-const fmtDateShort = s => { if(!s) return "—"; const d=new Date(s); return d.toLocaleDateString('en-US',{month:'short',day:'numeric'}); };
+// Parse a YYYY-MM-DD string as a *local* date — avoids UTC-midnight drift that shifts the day
+// in timezones west of UTC. All schedule/calendar logic must go through this.
+const parseLocalDate = s => { if(!s) return null; const [y,m,d]=s.split('-').map(Number); return new Date(y, m-1, d); };
+const fmtDate = s => { const d=parseLocalDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) : "—"; };
+const fmtDateShort = s => { const d=parseLocalDate(s); return d ? d.toLocaleDateString('en-US',{month:'short',day:'numeric'}) : "—"; };
 // today in YYYY-MM-DD using local timezone (matches what <input type="date"> expects)
 const todayISO = () => { const d=new Date(); return d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'); };
-let TODAY = new Date(todayISO());
-function refreshToday() { const t = new Date(todayISO()); if (t.getTime() !== TODAY.getTime()) TODAY = t; }
-const daysUntil = s => { if(!s) return null; const d=new Date(s); return Math.round((d-TODAY)/(1000*60*60*24)); };
+const TODAY = parseLocalDate(todayISO());
+const daysUntil = s => { const d=parseLocalDate(s); return d ? Math.round((d-TODAY)/(1000*60*60*24)) : null; };
 const initials = s => (s||"?").trim().split(/\s+/).slice(0,2).map(w=>w[0]||"").join("").toUpperCase();
 
 function calcProfit(p) {
@@ -526,7 +524,6 @@ let adminUnlocked = false;
 function setView(v) {
   if ((v === 'dashboard' || v === 'prices' || v === 'admin' || v === 'statement') && !adminUnlocked) { showPinGate(); return; }
   if (v === 'admin') v = 'dashboard';
-  if (v !== 'schedule') stopScheduleLive();
   currentView = v;
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.view === v));
   document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.view === v));
@@ -573,7 +570,6 @@ function bindNav() {
 }
 
 function render() {
-  refreshToday();
   const doneCount = STATEMENT.filter(r => r.status === 'Done').length;
   const scheduledCount = TASKS.filter(t => t.status !== 'Invoice' && t.status !== 'Invoices' && t.status !== 'Done' && (t.dueDate || t.deadline)).length;
   const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], schedule:["Follow-up Schedule", `${scheduledCount} tasks with due/deadline dates`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
@@ -1252,22 +1248,9 @@ function setPicFilter(p) { tasksPicFilter = p; render(); }
 let schedPicFilter = 'All';
 let schedMonth = null; // YYYY-MM, null = current month
 let schedDay   = null; // YYYY-MM-DD, when set the schedule renders a single-day detail
-let scheduleLiveTimer = null;       // periodic re-render while on the schedule view
-let scheduleLastUpdate = null;      // timestamp of last render (for "LIVE · HH:MM:SS")
-const SCHEDULE_LIVE_INTERVAL_MS = 60_000;  // 1 minute — covers urgency rollovers and midnight
 function setSchedPic(p)   { schedPicFilter = p; render(); }
 function setSchedMonth(m) { schedMonth = m; schedDay = null; render(); }
 function setSchedDay(d)   { schedDay = d; render(); }
-function startScheduleLive() {
-  stopScheduleLive();
-  scheduleLiveTimer = setInterval(() => {
-    if (currentView !== 'schedule') { stopScheduleLive(); return; }
-    render();
-  }, SCHEDULE_LIVE_INTERVAL_MS);
-}
-function stopScheduleLive() {
-  if (scheduleLiveTimer) { clearInterval(scheduleLiveTimer); scheduleLiveTimer = null; }
-}
 
 function renderSchedule() {
   const PRIORITY_META = {
@@ -1327,10 +1310,10 @@ function renderSchedule() {
       due:      { text: 'DUE',      color: 'var(--blue)',  bg: 'var(--blue-soft)' },
       starting: { text: 'STARTING', color: 'var(--green)', bg: 'var(--green-soft)' }
     };
-    const dayLabel = new Date(day).toLocaleDateString('en-US',
+    const dayLabel = parseLocalDate(day).toLocaleDateString('en-US',
       { weekday:'long', month:'long', day:'numeric', year:'numeric' });
     const monthOfDay = day.slice(0,7);
-    const monthOfDayLabel = new Date(day).toLocaleDateString('en-US', { month:'long', year:'numeric' });
+    const monthOfDayLabel = parseLocalDate(day).toLocaleDateString('en-US', { month:'long', year:'numeric' });
 
     const cardsHtml = dayTasks.map(({ task: t, reasons }) => {
       const meta = PRIORITY_META[bucketOf(t)];
@@ -1370,7 +1353,6 @@ function renderSchedule() {
             <div class="panel-title">${dayLabel}</div>
             <div class="panel-sub">${dayTasks.length} task${dayTasks.length===1?'':'s'} on this date${schedPicFilter!=='All'?` · PIC: ${schedPicFilter}`:''}</div>
           </div>
-          <div class="live-pulse" title="Calendar refreshes automatically every minute">LIVE<span class="lp-time" id="sched-live-time">${new Date().toLocaleTimeString()}</span></div>
         </div>
         <div class="panel-head" style="border-top:1px solid var(--border-soft);background:#fafbfc;"><div class="panel-sub">PIC:</div>
           <div class="filter-bar">
@@ -1382,8 +1364,6 @@ function renderSchedule() {
           ${cardsHtml || '<div class="empty">No tasks scheduled on this day</div>'}
         </div>
       </div>`;
-    scheduleLastUpdate = new Date();
-    startScheduleLive();
     return;
   }
 
@@ -1401,14 +1381,22 @@ function renderSchedule() {
     return `${yy}-${String(mm).padStart(2,'0')}`;
   }
 
-  // Group tasks by primary date (deadline preferred, else dueDate).
-  // Tasks without either don't appear on the calendar — they're listed in a "no date" footer.
+  // Place each task on EVERY date it has — deadline cell shows "DL", due-date cell shows "DUE".
+  // When the two are the same day, show one "DL" pill (deadline wins). Tasks without any
+  // date go to the "no date" footer.
   const tasksByDate = {};
   const undated = [];
   pool.forEach(t => {
-    const primary = t.deadline || t.dueDate;
-    if (!primary) { undated.push(t); return; }
-    (tasksByDate[primary] = tasksByDate[primary] || []).push(t);
+    let placed = false;
+    if (t.deadline) {
+      (tasksByDate[t.deadline] = tasksByDate[t.deadline] || []).push({ t, kind: 'DL' });
+      placed = true;
+    }
+    if (t.dueDate && t.dueDate !== t.deadline) {
+      (tasksByDate[t.dueDate] = tasksByDate[t.dueDate] || []).push({ t, kind: 'DUE' });
+      placed = true;
+    }
+    if (!placed) undated.push(t);
   });
 
   // Build 6×7 = 42 cells starting from the Sunday on/before the 1st
@@ -1426,13 +1414,13 @@ function renderSchedule() {
     });
   }
 
-  function taskPill(t) {
+  function taskPill(t, kind) {
     const meta = PRIORITY_META[bucketOf(t)];
-    const kind = t.deadline ? 'DL' : 'DUE';
     const label = (t.project || '—') + (t.customer ? ' · ' + t.customer : '');
+    const kindLabel = kind === 'DL' ? 'Deadline' : 'Due date';
     return `<div class="cal-task" onclick="event.stopPropagation();openTaskModal('${t.id}')"
               style="background:${meta.bg};color:${meta.color};border-left:3px solid ${meta.color};"
-              title="${(t.project||'—').replace(/"/g,'&quot;')} · ${(t.customer||'').replace(/"/g,'&quot;')} · ${meta.label}">
+              title="${(t.project||'—').replace(/"/g,'&quot;')} · ${(t.customer||'').replace(/"/g,'&quot;')} · ${kindLabel} · ${meta.label}">
       <span class="cal-task-kind">${kind}</span>${label.replace(/</g,'&lt;')}
     </div>`;
   }
@@ -1441,15 +1429,18 @@ function renderSchedule() {
     <div class="cal-grid">
       ${['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d => `<div class="cal-head">${d}</div>`).join('')}
       ${cells.map(c => {
-        const ts = (tasksByDate[c.iso] || []).slice(0).sort((a,b) =>
-          (PRIORITY_META[bucketOf(a)].label).localeCompare(PRIORITY_META[bucketOf(b)].label)
-        );
+        // Sort by urgency (overdue → critical → … → later); deadline pills before due pills on the same urgency.
+        const ts = (tasksByDate[c.iso] || []).slice(0).sort((a,b) => {
+          const ua = PRIORITY_META[bucketOf(a.t)].label;
+          const ub = PRIORITY_META[bucketOf(b.t)].label;
+          return ua.localeCompare(ub) || (a.kind === b.kind ? 0 : a.kind === 'DL' ? -1 : 1);
+        });
         const visible = ts.slice(0, 4);
         const extra = ts.length - visible.length;
         return `<div class="cal-cell ${c.inMonth?'':'cal-out'} ${c.isToday?'cal-today':''} ${c.isWeekend?'cal-weekend':''}" onclick="setSchedDay('${c.iso}')" title="View ${c.iso}">
           <span class="cal-date">${c.day}</span>
-          ${visible.map(taskPill).join('')}
-          ${extra > 0 ? `<div class="cal-more" title="${ts.slice(4).map(t => (t.project||'—')).join('\n')}">+ ${extra} more</div>` : ''}
+          ${visible.map(({t, kind}) => taskPill(t, kind)).join('')}
+          ${extra > 0 ? `<div class="cal-more" title="${ts.slice(4).map(({t}) => (t.project||'—')).join('\n')}">+ ${extra} more</div>` : ''}
         </div>`;
       }).join('')}
     </div>`;
@@ -1474,7 +1465,6 @@ function renderSchedule() {
       <div class="panel-head">
         <div><div class="panel-title">${monthLabel}</div><div class="panel-sub">Tasks placed on their <strong>deadline</strong> (DL) or <strong>due date</strong> (DUE) · click a cell to view that day</div></div>
         <div class="filter-bar" style="margin-left:auto;align-items:center;gap:10px;">
-          <span class="live-pulse" title="Calendar refreshes automatically every minute">LIVE<span class="lp-time" id="sched-live-time">${new Date().toLocaleTimeString()}</span></span>
           <button class="btn" onclick="setSchedMonth('${shiftMonth(ym,-1)}')">◀</button>
           <button class="btn" onclick="setSchedMonth('${todayISO().slice(0,7)}')">Today</button>
           <button class="btn" onclick="setSchedMonth('${shiftMonth(ym,+1)}')">▶</button>
@@ -1490,9 +1480,6 @@ function renderSchedule() {
     </div>
 
     ${undatedHtml}`;
-
-  scheduleLastUpdate = new Date();
-  startScheduleLive();
 }
 
 let pricesFilter = "All";
@@ -1609,7 +1596,8 @@ function openTaskModal(id) {
     <div class="field"><label>Description</label><input id="f-desc" value="${(t.description||'').replace(/"/g,'&quot;')}" placeholder="Material, size, color..." /></div>
     <div class="field-row-3"><div class="field"><label>Unit</label><input id="f-unit" type="number" value="${t.unit||0}" /></div><div class="field"><label>Price ¥/u</label><input id="f-price" type="number" step="0.01" value="${t.price||0}" /><div class="helper">Production cost in Yuan/unit</div></div><div class="field"><label>Sample ¥</label><input id="f-sample" type="number" value="${t.sample||0}" /><div class="helper">Total batch sample, Yuan</div></div></div>
     <div class="field-row"><div class="field"><label>Status</label><select id="f-status">${STATUSES_TASK.map(s=>`<option ${s===t.status?'selected':''}>${s}</option>`).join('')}</select></div><div class="field"><label>Date</label><input id="f-date" type="date" value="${t.date||''}" /></div></div>
-    <div class="field-row"><div class="field"><label>Due Date</label><input id="f-due" type="date" value="${t.dueDate||''}" /></div><div class="field"><label>Deadline</label><input id="f-dl" type="date" value="${t.deadline||''}" /></div></div>
+    <div class="field-row"><div class="field"><label>Due Date</label><input id="f-due" type="date" value="${t.dueDate||''}" oninput="updateTaskDatePreview()" /></div><div class="field"><label>Deadline</label><input id="f-dl" type="date" value="${t.deadline||''}" oninput="updateTaskDatePreview()" /></div></div>
+    <div id="task-date-preview" style="margin:-4px 0 10px;padding:9px 12px;background:var(--bg);border:1px solid var(--border-soft);border-radius:8px;font-size:12px;line-height:1.55;"></div>
     <div class="note-box"><strong>Auto-rule:</strong> Setting status to <em>Invoice</em> transfers this to Product Price.</div>
     <div class="field"><label>Product Photo</label>
       <div class="photo-wrap">
@@ -1652,7 +1640,33 @@ function openTaskModal(id) {
     setupSigPad('sig-pic','pic'); setupSigPad('sig-approve','approve'); updateCPFormStatus();
     setupAutocomplete(document.getElementById('f-pic'),  () => TEAM);
     setupAutocomplete(document.getElementById('f-cust'), () => CUSTOMERS);
+    updateTaskDatePreview();
   }, 30);
+}
+
+// Live preview of where this task will land in the schedule calendar, plus warning when dates conflict.
+function updateTaskDatePreview() {
+  const due = document.getElementById('f-due')?.value || '';
+  const dl  = document.getElementById('f-dl')?.value  || '';
+  const el  = document.getElementById('task-date-preview');
+  if (!el) return;
+  const pretty = s => parseLocalDate(s).toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+  const relDays = s => { const n = daysUntil(s); return n === null ? '' : n < 0 ? ` · ${Math.abs(n)}d ago` : n === 0 ? ' · today' : ` · in ${n}d`; };
+  const parts = [];
+  if (dl)  parts.push(`<span style="color:var(--red);"><strong>DL</strong> ${pretty(dl)}<span style="color:var(--text-3);font-weight:500;">${relDays(dl)}</span></span>`);
+  if (due && due !== dl) parts.push(`<span style="color:var(--blue);"><strong>DUE</strong> ${pretty(due)}<span style="color:var(--text-3);font-weight:500;">${relDays(due)}</span></span>`);
+  let html;
+  if (parts.length === 0) {
+    html = `<span style="color:var(--text-3);">No date set — task will appear under <em>"No date set"</em> below the calendar.</span>`;
+  } else {
+    html = `<span style="color:var(--text-3);">Calendar:</span> ${parts.join(' &nbsp;·&nbsp; ')}`;
+  }
+  if (due && dl && due > dl) {
+    html += `<br><span style="color:var(--red);font-weight:600;">⚠ Due date is after the deadline — check your dates.</span>`;
+  } else if (due && dl && due === dl) {
+    html += `<br><span style="color:var(--text-3);">Due and deadline are the same day — shown once as DL.</span>`;
+  }
+  el.innerHTML = html;
 }
 
 function setupSigPad(canvasId, kind) {
