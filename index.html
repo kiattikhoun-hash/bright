@@ -2529,11 +2529,11 @@ async function qtGeneratePdf(q) {
   fill(AMBER); pdf.rect(ML, y + 16, CW * 0.35, 0.8, 'F');
   fill(NAVY);  pdf.rect(ML + CW * 0.35, y + 16, CW * 0.65, 0.8, 'F');
 
-  // Real Bright logo (rasterized SVG) on the left side of the navy bar.
-  // The SVG bg is navy so it blends seamlessly with the header strip.
+  // Real Bright logo (rasterized SVG) on the left side of the navy bar,
+  // half the previous footprint. Vertically centred inside the 16 mm bar.
   try {
-    const logoPng = await qtLoadLogoPng(60, 16);
-    pdf.addImage(logoPng, 'PNG', ML + 1, y, 60, 16, undefined, 'FAST');
+    const logoPng = await qtLoadLogoPng(30, 8);
+    pdf.addImage(logoPng, 'PNG', ML + 1, y + 4, 30, 8, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
 
   // address right-aligned
