@@ -188,7 +188,7 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-bridge-status.err{background:#fee2e2;color:var(--red)}
 .qt-line-row{display:grid;grid-template-columns:30px 92px 1fr 70px 110px 110px 28px;gap:8px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
 .qt-line-row.header{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-3);letter-spacing:.04em;border-bottom:1.5px solid var(--border)}
-.qt-line-row textarea{min-height:56px;resize:vertical;font-family:inherit;font-size:12.5px;padding:6px 8px;line-height:1.45}
+.qt-line-row textarea{min-height:36px;resize:none;overflow:hidden;font-family:inherit;font-size:12.5px;padding:6px 8px;line-height:1.45}
 .qt-line-row input{font-size:12.5px;padding:6px 8px}
 .qt-line-row .qt-line-amt{align-self:center;text-align:right;font-weight:600;color:var(--text)}
 .qt-line-row .qt-line-del{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;align-self:center}
@@ -2036,13 +2036,22 @@ function qtRenderLines() {
       <div class="qt-line-photo" onclick="qtPickLinePhoto(${i})" title="Click to ${it.photoData?'replace':'add'} photo">
         ${it.photoData ? `<img src="${it.photoData}">` : 'Click to<br>add photo'}
       </div>
-      <textarea oninput="qtUpdateLine(${i},'description',this.value)" placeholder="Item description (size, material, color, finishing — multi-line OK)…">${(it.description||'').replace(/</g,'&lt;')}</textarea>
+      <textarea rows="1" oninput="qtUpdateLine(${i},'description',this.value);qtAutoGrow(this)" placeholder="Item description (size, material, color, finishing — multi-line OK)…">${(it.description||'').replace(/</g,'&lt;')}</textarea>
       <input type="number" step="any" value="${it.qty}" oninput="qtUpdateLine(${i},'qty',this.value)" />
       <input type="number" step="any" value="${it.unitPrice}" oninput="qtUpdateLine(${i},'unitPrice',this.value)" />
       <div class="qt-line-amt" id="q-amt-${i}">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</div>
       <button class="qt-line-del" onclick="qtRemoveLine(${i})" title="Remove line">×</button>
     </div>
   `).join('');
+  // Size each textarea to its actual content so the row hugs the description
+  document.querySelectorAll('#q-lines-body textarea').forEach(qtAutoGrow);
+}
+
+// Make a textarea's height match its scrollHeight — fits the typed content
+// exactly, no fixed min height to leave whitespace, no scrollbar to clip text.
+function qtAutoGrow(el) {
+  el.style.height = 'auto';
+  el.style.height = el.scrollHeight + 'px';
 }
 function qtTotals(q) {
   const sub = q.items.reduce((n, it) => n + (+it.qty||0) * (+it.unitPrice||0), 0);
