@@ -1758,7 +1758,7 @@ function renderQuotations() {
 
   const renderBadges = q => {
     const list = q.generated || [];
-    if (!list.length) return '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>';
+    if (!list.length) return `<span class="badge" onclick="event.stopPropagation();openQuotationModal('${q.id}')" title="Open form to generate a PDF" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;cursor:pointer;user-select:none;">draft</span>`;
     return list.map(g => {
       const f = qtFindPdf(q, g);
       const activePath = f ? f.path : qtBuildPath(q, g);
@@ -1792,7 +1792,7 @@ function renderQuotations() {
           <button class="btn" onclick="qtClosePreview()">Close</button>
         </div>
       </div>
-      <div class="panel-body" style="background:#f1f5f9;max-height:80vh;overflow:auto;padding:14px;">
+      <div class="panel-body" style="background:#f1f5f9;padding:14px;">
         <div id="qt-pdf-host"><div style="text-align:center;color:#94a3b8;padding:30px;">Rendering PDF…</div></div>
       </div>
     </div>` : '';
