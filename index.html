@@ -2232,8 +2232,8 @@ function qtBuildDocHtml(q) {
     if (firstIdx === -1) return '';
     const head = lines[firstIdx];
     const tail = lines.slice(firstIdx + 1);
-    return `<div style="font-weight:700;font-size:10px;line-height:1.25;margin-bottom:1px;">${esc(head)}</div>` +
-      tail.filter(l => l.length).map(l => `<div style="font-size:9px;line-height:1.3;color:#1a1d23;">${esc(l)}</div>`).join('');
+    return `<div style="font-weight:700;font-size:10px;line-height:1.25;margin-bottom:1px;word-break:break-word;">${esc(head)}</div>` +
+      tail.filter(l => l.length).map(l => `<div style="font-size:9px;line-height:1.3;color:#1a1d23;word-break:break-word;">${esc(l)}</div>`).join('');
   };
 
   const lines = q.items.map((it, i) => {
@@ -2307,7 +2307,7 @@ function qtBuildDocHtml(q) {
       <div style="padding:14px 16px 0;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
           <colgroup>
-            <col style="width:60px;"><col style="width:130px;"><col><col style="width:50px;"><col style="width:80px;"><col style="width:90px;">
+            <col style="width:40px;"><col style="width:110px;"><col style="width:170px;"><col style="width:60px;"><col style="width:130px;"><col style="width:252px;">
           </colgroup>
           <thead>
             <tr style="background:#142a5f;color:#fff;font-weight:700;">
