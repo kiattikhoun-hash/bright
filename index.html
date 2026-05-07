@@ -2160,24 +2160,46 @@ function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\
 // then ships the bytes to the bridge so it lands in the Synology Drive folder.
 async function qtGeneratePdf(q) {
   const html = qtBuildDocHtml(q);
-  const holder = document.createElement('div');
-  // Render at exact A4 width (210mm @ 96dpi = 794px) so html2canvas captures
-  // the doc 1:1. If the content is taller than one A4 page we scale the
-  // capture down so everything still lands on a single sheet.
-  holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;background:#fff;';
-  holder.innerHTML = html;
-  document.body.appendChild(holder);
+  // Render the doc inside an iframe so layout is isolated from the host page
+  // (no inherited fonts, no media queries, no outer styles). The iframe's body
+  // is forced to A4 logical width and we hand its scrollWidth / scrollHeight
+  // directly to html2canvas so the capture is strictly clamped to A4.
+  const RENDER_W = 794;     // A4 portrait width in CSS px @ 96dpi
+  const TARGET_H = 1063;    // A4 portrait height minus ~16mm margin
+  const iframe = document.createElement('iframe');
+  iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:' + RENDER_W + 'px;height:1200px;border:0;background:#fff;';
+  document.body.appendChild(iframe);
   try {
-    const card = holder.firstElementChild;
+    const doc = iframe.contentDocument;
+    doc.open();
+    doc.write(`<!doctype html><html><head><meta charset="utf-8">
+      <style>
+        *{box-sizing:border-box}
+        html,body{margin:0;padding:0;background:#fff;width:${RENDER_W}px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;}
+        body>div{width:${RENDER_W}px!important;max-width:${RENDER_W}px!important;}
+      </style>
+    </head><body>${html}</body></html>`);
+    doc.close();
+    // Allow images inside the iframe to load
+    await new Promise(r => setTimeout(r, 80));
+    const card = doc.body.firstElementChild;
     const rendered = card.getBoundingClientRect();
-    // A4 portrait = 1123 px @ 96dpi; subtract ~16mm of vertical margin (60 px).
-    const targetH = 1063;
-    const fitScale = rendered.height > targetH ? targetH / rendered.height : 1;
+    // Shrink capture vertically if the doc would exceed one A4 page
+    const fitScale = rendered.height > TARGET_H ? TARGET_H / rendered.height : 1;
     const blob = await html2pdf().set({
       margin: [8, 8, 8, 8],
       filename: 'doc.pdf',
       image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2 * fitScale, useCORS: true, backgroundColor: '#ffffff' },
+      html2canvas: {
+        scale: 2 * fitScale,
+        useCORS: true,
+        backgroundColor: '#ffffff',
+        width: RENDER_W,
+        height: rendered.height,
+        windowWidth: RENDER_W,
+        windowHeight: rendered.height,
+        x: 0, y: 0,
+      },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
     }).from(card).outputPdf('blob');
@@ -2199,7 +2221,7 @@ async function qtGeneratePdf(q) {
       showToast('Bridge offline — PDF could not be saved');
     }
   } finally {
-    document.body.removeChild(holder);
+    document.body.removeChild(iframe);
   }
 }
 
