@@ -8,6 +8,8 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+<script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <style>
 :root{color-scheme:light;--bg:#f4f6fb;--panel:#fff;--border:#dde3ee;--border-soft:#eaeef5;--text:#0f172a;--text-2:#475569;--text-3:#7c869a;--accent:#142a5f;--accent-soft:#e2e8f4;--accent-2:#1e40af;--brand-amber:#f59e0b;--green:#10b981;--green-soft:#d1fae5;--amber:#f59e0b;--amber-soft:#fef3c7;--red:#ef4444;--red-soft:#fee2e2;--blue:#3b82f6;--blue-soft:#dbeafe;--purple:#8b5cf6;--purple-soft:#ede9fe;--pink:#ec4899;--pink-soft:#fce7f3;--gray-soft:#f1f4f9;--shadow-sm:0 1px 2px rgba(15,23,42,.05);--radius:14px}
 *{box-sizing:border-box}html,body{margin:0;padding:0}
@@ -177,6 +179,9 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-preview-head strong{font-weight:600}
 .qt-preview-body{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;background:#525659}
 .qt-preview-body iframe{width:100%;height:100%;border:0;background:#fff}
+.qt-pdf-host{width:100%;height:100%;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;box-sizing:border-box}
+.qt-pdf-host canvas{max-width:100%;height:auto;box-shadow:0 4px 16px rgba(0,0,0,.25);background:#fff;display:block}
+.qt-pdf-loading{color:#cbd5e1;font-size:13px;padding:30px}
 .qt-preview-empty{color:#cbd5e1;font-size:13px;text-align:center;padding:40px}
 .qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
 .qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
@@ -1742,7 +1747,7 @@ function renderQuotations() {
 
   const previewHtml = qtSelectedFile
     ? (qtSelectedFile.type === 'pdf'
-        ? `<iframe src="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}#toolbar=1&view=FitH&zoom=page-width"></iframe>`
+        ? `<div class="qt-pdf-host" id="qt-pdf-host"><div class="qt-pdf-loading">Rendering PDF…</div></div>`
         : `<div style="background:#fff;padding:24px;width:100%;height:100%;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;white-space:pre;" id="qt-json-view">Loading…</div>`)
     : `<div class="qt-preview-empty">Pick a file on the left to preview it here.<br><span style="font-size:11.5px;color:#94a3b8;">(PDF renders inline · JSON shows raw data)</span></div>`;
 
@@ -1766,7 +1771,7 @@ function renderQuotations() {
         </div>
         <div class="qt-resizer" id="qt-resizer" title="Drag to resize"></div>
         <div class="qt-pane-right">
-          <div class="qt-preview-head">${qtSelectedFile ? `<strong>${qtSelectedFile.path}</strong>` : 'Preview'}</div>
+          <div class="qt-preview-head">${qtSelectedFile ? `<strong>${qtSelectedFile.path}</strong><a style="margin-left:auto;font-size:11.5px;color:var(--accent);" target="_blank" href="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}">Open in new tab ↗</a>` : 'Preview'}</div>
           <div class="qt-preview-body">${previewHtml}</div>
         </div>
       </div>
@@ -1783,6 +1788,41 @@ function renderQuotations() {
 
   qtBindResizer();
   if (qtSelectedFile && qtSelectedFile.type === 'json') qtLoadJsonPreview();
+  if (qtSelectedFile && qtSelectedFile.type === 'pdf')  qtRenderPdf();
+}
+
+// Render a PDF into the right pane via pdf.js. Pages are drawn to <canvas> so
+// we control the scale (always fits the pane width), avoiding the browser's
+// built-in PDF viewer which ignores fit-to-width inside iframes.
+async function qtRenderPdf() {
+  const host = document.getElementById('qt-pdf-host');
+  if (!host || !qtSelectedFile) return;
+  if (!window.pdfjsLib) { host.innerHTML = '<div class="qt-pdf-loading">PDF renderer not loaded — check internet.</div>'; return; }
+  try {
+    const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path);
+    const pdf = await pdfjsLib.getDocument({ url }).promise;
+    host.innerHTML = '';
+    // Pane width minus 28px host padding on each side; clamp to a reasonable max
+    const paneWidth = Math.max(280, host.clientWidth - 28);
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const baseVp = page.getViewport({ scale: 1 });
+      const scale = paneWidth / baseVp.width;
+      const vp = page.getViewport({ scale });
+      const canvas = document.createElement('canvas');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width  = Math.floor(vp.width * dpr);
+      canvas.height = Math.floor(vp.height * dpr);
+      canvas.style.width  = vp.width + 'px';
+      canvas.style.height = vp.height + 'px';
+      const ctx = canvas.getContext('2d');
+      ctx.scale(dpr, dpr);
+      host.appendChild(canvas);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+    }
+  } catch (e) {
+    host.innerHTML = `<div class="qt-pdf-loading">Failed to render: ${e.message}</div>`;
+  }
 }
 
 // ── Bridge file actions ────────────────────────────────────────────────────
