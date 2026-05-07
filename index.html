@@ -1743,7 +1743,8 @@ function renderQuotations() {
       if (f) {
         const safePath = f.path.replace(/'/g,"\\'");
         const safeName = f.name.replace(/'/g,"\\'");
-        return `<span class="badge" onclick="event.stopPropagation();qtOpenPdfModal('${safePath}','${safeName}')" title="Open ${f.name}" style="background:var(--accent-soft);color:var(--accent);font-size:10px;cursor:pointer;">${g}</span>`;
+        const isActive = qtSelectedFile && qtSelectedFile.path === f.path;
+        return `<span class="badge" onclick="event.stopPropagation();qtShowInPanel('${safePath}','${safeName}')" title="Open ${f.name}" style="background:${isActive?'var(--accent)':'var(--accent-soft)'};color:${isActive?'#fff':'var(--accent)'};font-size:10px;cursor:pointer;">${g}</span>`;
       }
       return `<span class="badge" title="File not found on disk yet — try refreshing" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">${g}</span>`;
     }).join(' ');
@@ -1764,10 +1765,24 @@ function renderQuotations() {
     ? '<span class="qt-bridge-status ok">● Bridge connected</span>'
     : '<span class="qt-bridge-status err">● Bridge offline</span>';
 
+  const displayPanel = qtSelectedFile ? `
+    <div class="panel" style="margin-top:14px;">
+      <div class="panel-head">
+        <div><div class="panel-title">Preview</div><div class="panel-sub">${qtSelectedFile.name || qtSelectedFile.path}</div></div>
+        <div class="filter-bar">
+          <a class="btn" target="_blank" rel="noopener" href="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}">Open in new tab ↗</a>
+          <button class="btn" onclick="qtClosePreview()">Close</button>
+        </div>
+      </div>
+      <div class="panel-body" style="background:#f1f5f9;max-height:80vh;overflow:auto;padding:14px;">
+        <div id="qt-pdf-host"><div style="text-align:center;color:#94a3b8;padding:30px;">Rendering PDF…</div></div>
+      </div>
+    </div>` : '';
+
   document.getElementById('content').innerHTML = `
     <div class="panel">
       <div class="panel-head">
-        <div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} · click a row to edit · click a status badge to open the saved PDF &nbsp;${bridgeStatus}</div></div>
+        <div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} · click a row to edit · click a status badge to preview the PDF below &nbsp;${bridgeStatus}</div></div>
         <div class="filter-bar">
           <button class="btn" onclick="qtReloadFiles()">↻ Refresh files</button>
         </div>
@@ -1777,7 +1792,10 @@ function renderQuotations() {
         <tbody>${recordRows || '<tr><td colspan="6" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
       </table></div></div>
     </div>
+    ${displayPanel}
   `;
+
+  if (qtSelectedFile) qtRenderPdf();
 }
 
 // Pop the saved PDF up in the global modal — used when the user clicks a
@@ -1838,12 +1856,13 @@ async function qtRenderPdf() {
       const canvas = document.createElement('canvas');
       canvas.width  = vp.width;
       canvas.height = vp.height;
+      canvas.style.cssText = 'display:block;width:100%;max-width:900px;height:auto;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12);margin:0 auto 10px;border-radius:4px;';
       const ctx = canvas.getContext('2d');
       host.appendChild(canvas);
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
     }
   } catch (e) {
-    host.innerHTML = `<div class="qt-pdf-loading">Failed to render: ${e.message}</div>`;
+    host.innerHTML = `<div style="text-align:center;color:#ef4444;padding:30px;">Failed to render: ${e.message}</div>`;
   }
 }
 
@@ -1855,6 +1874,23 @@ async function qtReloadFiles() {
 }
 async function qtSelectFile(p, type) {
   qtSelectedFile = { path: p, type };
+  if (currentView === 'quotations') render();
+}
+// Set the current preview to a saved PDF and re-render so the display panel
+// shows up below the records table.
+function qtShowInPanel(path, name) {
+  qtSelectedFile = { path, name, type: 'pdf' };
+  if (currentView === 'quotations') {
+    render();
+    // Scroll the new panel into view so it's obvious where the click landed.
+    setTimeout(() => {
+      const el = document.querySelector('#qt-pdf-host');
+      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }, 50);
+  }
+}
+function qtClosePreview() {
+  qtSelectedFile = null;
   if (currentView === 'quotations') render();
 }
 async function qtLoadJsonPreview() {
