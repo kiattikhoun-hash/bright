@@ -1788,6 +1788,7 @@ function renderQuotations() {
       <div class="panel-head">
         <div><div class="panel-title">Preview</div><div class="panel-sub">${qtSelectedFile.name || qtSelectedFile.path}</div></div>
         <div class="filter-bar">
+          <button class="btn btn-primary" onclick="qtPrintCurrentPreview()">🖨 Print</button>
           <a class="btn" target="_blank" rel="noopener" href="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}">Open in new tab ↗</a>
           <button class="btn" onclick="qtClosePreview()">Close</button>
         </div>
@@ -1908,6 +1909,32 @@ function qtClosePreview() {
   qtSelectedFile = null;
   if (currentView === 'quotations') render();
 }
+
+// Open the current preview in a hidden iframe and trigger the browser's print
+// dialog. Blob URLs are same-origin so iframe.contentWindow.print() works
+// reliably across browsers — no pop-up blocker issue.
+async function qtPrintCurrentPreview() {
+  if (!qtSelectedFile) return;
+  const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path);
+  showToast('Preparing print…');
+  try {
+    const blob = await (await fetch(url)).blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const old = document.getElementById('qt-print-frame');
+    if (old) old.remove();
+    const iframe = document.createElement('iframe');
+    iframe.id = 'qt-print-frame';
+    iframe.style.cssText = 'position:fixed;right:0;bottom:0;width:0;height:0;border:0;';
+    iframe.src = blobUrl;
+    iframe.onload = () => {
+      try { iframe.contentWindow.focus(); iframe.contentWindow.print(); }
+      catch (e) { window.open(blobUrl, '_blank'); }
+    };
+    document.body.appendChild(iframe);
+  } catch (e) {
+    showToast('Print failed: ' + e.message);
+  }
+}
 async function qtLoadJsonPreview() {
   const el = document.getElementById('qt-json-view');
   if (!el || !qtSelectedFile) return;
@@ -2022,6 +2049,14 @@ function openQuotationModal(id) {
 
     <div class="field" style="margin-top:14px;"><label>Notes (optional)</label><textarea id="q-notes" rows="2" style="font-family:inherit;font-size:13px;padding:8px;width:100%;border:1px solid var(--border);border-radius:8px;">${q.notes||''}</textarea></div>
 
+    <div class="field" style="margin-top:14px;"><label>Terms & Conditions (shown on PDF)</label>
+      <div id="q-terms-host"></div>
+    </div>
+
+    <div class="field" style="margin-top:14px;"><label>Signature (PREPARED BY)</label>
+      <div id="q-sig-host"></div>
+    </div>
+
     <div class="note-box" style="margin-top:14px;"><strong>Document type for PDF:</strong>
       <div class="qt-doc-types" style="margin-top:6px;">
         ${QT_DOC_TYPES.map(d => `<span class="chip ${d===q.docType?'active':''}" onclick="qtPickDocType(this,'${d}')">${d}</span>`).join('')}
@@ -2056,8 +2091,97 @@ function openQuotationModal(id) {
   setTimeout(() => {
     qtRenderLines();
     qtRefreshTotals();
+    qtRenderTerms();
+    qtRenderSignature();
     setupAutocomplete(document.getElementById('q-cust'), () => CUSTOMERS);
   }, 30);
+}
+
+// ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
+function qtRenderSignature() {
+  const host = document.getElementById('q-sig-host');
+  if (!host) return;
+  const q = qtCurrentRecord();
+  if (q.signature) {
+    host.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <img src="${q.signature}" style="max-height:60px;max-width:240px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
+        <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Replace</button>
+        <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Remove</button>
+      </div>`;
+  } else {
+    host.innerHTML = `
+      <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload signature image</button>
+      <span style="margin-left:8px;font-size:11.5px;color:var(--text-3);">PNG with transparent background works best · placed above "PREPARED BY" on the PDF</span>`;
+  }
+}
+function qtPickSignature() {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const q = qtCurrentRecord();
+      q.signature = r.result;
+      qtSetCurrentRecord(q);
+      qtRenderSignature();
+    };
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+function qtClearSignature() {
+  const q = qtCurrentRecord();
+  q.signature = '';
+  qtSetCurrentRecord(q);
+  qtRenderSignature();
+}
+
+// Render the Terms & Conditions multi-select dropdown using <details>. Lines
+// come from QT_TERMS for the current doc type. Selections live on the record
+// as q.terms (array of selected line strings). Switching doc type via
+// qtPickDocType resets to that doc type's defaults.
+function qtRenderTerms() {
+  const q = qtCurrentRecord();
+  const opts = QT_TERMS[q.docType] || [];
+  if (!Array.isArray(q.terms)) q.terms = opts.slice();
+  // Drop selections that no longer exist in the new doc type's options
+  q.terms = q.terms.filter(t => opts.includes(t));
+  qtSetCurrentRecord(q);
+  const host = document.getElementById('q-terms-host');
+  if (!host) return;
+  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  host.innerHTML = `
+    <details style="position:relative;">
+      <summary style="cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center;background:#fff;">
+        <span id="q-terms-count">${q.terms.length} of ${opts.length} selected</span>
+        <span style="color:var(--text-3);">▾</span>
+      </summary>
+      <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;max-height:220px;overflow:auto;">
+        ${opts.length === 0
+          ? '<div style="font-size:12px;color:var(--text-3);padding:6px 0;">No predefined terms for this doc type.</div>'
+          : opts.map(line => {
+              const text = line.replace(/^\*\s*/, '');
+              const checked = q.terms.includes(line);
+              return `<label style="display:flex;gap:8px;padding:4px 0;font-size:12.5px;cursor:pointer;align-items:flex-start;">
+                <input type="checkbox" value="${esc(line)}" ${checked?'checked':''} onchange="qtToggleTerm(this)">
+                <span>${esc(text)}</span>
+              </label>`;
+            }).join('')}
+      </div>
+    </details>`;
+}
+
+function qtToggleTerm(el) {
+  const q = qtCurrentRecord();
+  if (!Array.isArray(q.terms)) q.terms = [];
+  const v = el.value;
+  if (el.checked) { if (!q.terms.includes(v)) q.terms.push(v); }
+  else            { q.terms = q.terms.filter(t => t !== v); }
+  qtSetCurrentRecord(q);
+  const c = document.getElementById('q-terms-count');
+  if (c) c.textContent = `${q.terms.length} of ${(QT_TERMS[q.docType]||[]).length} selected`;
 }
 
 function qtCurrentRecord() {
@@ -2070,7 +2194,12 @@ function qtSetCurrentRecord(q) {
 function qtPickDocType(el, d) {
   el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
-  const q = qtCurrentRecord(); q.docType = d; qtSetCurrentRecord(q);
+  const q = qtCurrentRecord();
+  q.docType = d;
+  // Reset T&C selections to the new doc type's defaults
+  q.terms = (QT_TERMS[d] || []).slice();
+  qtSetCurrentRecord(q);
+  qtRenderTerms();
 }
 function qtBankPicked() {
   const sel = document.getElementById('q-bank');
@@ -2480,7 +2609,9 @@ async function qtGeneratePdf(q) {
   y += 30;
 
   // ── 6. Terms & conditions ────────────────────────────────────────────────
-  const tcLines = QT_TERMS[q.docType].slice();
+  // Use the user's selected T&C lines if present (multi-select dropdown in form),
+  // falling back to the full default list for older records that have no q.terms.
+  const tcLines = (Array.isArray(q.terms) ? q.terms : QT_TERMS[q.docType] || []).slice();
   // Bank info is only relevant when money is being collected (Invoice / Receipt).
   // Quotation and Delivery Note hide it.
   const showBank = q.docType === 'Invoice' || q.docType === 'Receipt';
@@ -2523,6 +2654,14 @@ async function qtGeneratePdf(q) {
                   : q.docType === 'Receipt'  ? 'RECEIVED BY'
                   : 'CUSTOMER SIGN';
   const sigW = (CW - 12) / 2;
+  // Drop the uploaded signature above the PREPARED BY line, fitted into the
+  // signature column. Aspect-fit so tall signatures don't get squished.
+  if (q.signature) {
+    try {
+      const sigBoxW = sigW - 4, sigBoxH = 11;
+      pdf.addImage(q.signature, 'PNG', ML + sigW + 12 + 2, y, sigBoxW, sigBoxH, undefined, 'FAST');
+    } catch (e) { /* skip bad image */ }
+  }
   stroke(TEXT); pdf.setLineWidth(0.4);
   pdf.line(ML, y + 12, ML + sigW, y + 12);
   pdf.line(ML + sigW + 12, y + 12, ML + CW, y + 12);
