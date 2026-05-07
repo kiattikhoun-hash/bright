@@ -2424,6 +2424,15 @@ function qtLoadRecords() {
     const raw = localStorage.getItem(QT_LS_KEY);
     if (raw) QUOTATIONS = JSON.parse(raw) || [];
   } catch(e) {}
+  // One-time migration: legacy account name → new official name
+  let migrated = false;
+  for (const q of QUOTATIONS) {
+    if (q.accountName === 'Bright Production and Printing') {
+      q.accountName = 'Bright Production and Printing Individual Enterprise';
+      migrated = true;
+    }
+  }
+  if (migrated) qtPersistRecords();
 }
 
 async function qtDeleteRecord(id) {
@@ -2825,7 +2834,7 @@ function qtBuildDocHtml(q) {
                  : q.docType === 'Receipt'   ? 'Received by :'
                  : 'Customer Sign :';
   const tcBullets = QT_TERMS[q.docType].slice();
-  if (q.bankName)  tcBullets.push(`* Bank Name: ${q.bankName}  ·  Account No.: ${q.accountNo}  ·  Account Name: ${q.accountName || 'Bright Production and Printing'}`);
+  if (q.bankName)  tcBullets.push(`* Bank Name: ${q.bankName}  ·  Account No.: ${q.accountNo}  ·  Account Name: ${q.accountName || 'Bright Production and Printing Individual Enterprise'}`);
   if (q.notes)     tcBullets.push('* ' + q.notes);
 
   // ── Modern navy template ──
