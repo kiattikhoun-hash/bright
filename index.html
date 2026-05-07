@@ -2138,50 +2138,106 @@ function qtClearSignature() {
   qtRenderSignature();
 }
 
-// Render the Terms & Conditions multi-select dropdown using <details>. Lines
-// come from QT_TERMS for the current doc type. Selections live on the record
-// as q.terms (array of selected line strings). Switching doc type via
-// qtPickDocType resets to that doc type's defaults.
+// Convert q.terms into the canonical [{text, checked}] shape, regardless of
+// what was previously saved on the record:
+//   • undefined  → all defaults, all checked
+//   • [string]   → defaults checked iff present, plus user-added strings appended
+//   • [{text,checked}] → kept as-is
+function qtNormalizeTerms(termsRaw, docType) {
+  const opts = QT_TERMS[docType] || [];
+  if (Array.isArray(termsRaw) && termsRaw.length && typeof termsRaw[0] === 'object') {
+    return termsRaw.map(t => ({ text: t.text || '', checked: !!t.checked }));
+  }
+  if (Array.isArray(termsRaw)) {
+    const sel = new Set(termsRaw);
+    const out = opts.map(t => ({ text: t, checked: sel.has(t) }));
+    for (const t of termsRaw) if (!opts.includes(t)) out.push({ text: t, checked: true });
+    return out;
+  }
+  return opts.map(t => ({ text: t, checked: true }));
+}
+
+// Render the Terms & Conditions multi-select dropdown using <details>.
+// Each line is editable inline; users can add or remove lines freely.
+// Selections live on the record as q.terms = [{ text, checked }, ...].
+// Switching doc type via qtPickDocType resets to that doc type's defaults.
 function qtRenderTerms() {
   const q = qtCurrentRecord();
-  const opts = QT_TERMS[q.docType] || [];
-  if (!Array.isArray(q.terms)) q.terms = opts.slice();
-  // Drop selections that no longer exist in the new doc type's options
-  q.terms = q.terms.filter(t => opts.includes(t));
+  q.terms = qtNormalizeTerms(q.terms, q.docType);
   qtSetCurrentRecord(q);
   const host = document.getElementById('q-terms-host');
   if (!host) return;
-  const esc = s => s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const esc = s => (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  const total = q.terms.length;
+  const checkedCount = q.terms.filter(t => t.checked).length;
   host.innerHTML = `
     <details style="position:relative;">
       <summary style="cursor:pointer;padding:8px 10px;border:1px solid var(--border);border-radius:8px;font-size:13px;list-style:none;display:flex;justify-content:space-between;align-items:center;background:#fff;">
-        <span id="q-terms-count">${q.terms.length} of ${opts.length} selected</span>
+        <span id="q-terms-count">${checkedCount} of ${total} selected · click to edit</span>
         <span style="color:var(--text-3);">▾</span>
       </summary>
-      <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;max-height:220px;overflow:auto;">
-        ${opts.length === 0
-          ? '<div style="font-size:12px;color:var(--text-3);padding:6px 0;">No predefined terms for this doc type.</div>'
-          : opts.map(line => {
-              const text = line.replace(/^\*\s*/, '');
-              const checked = q.terms.includes(line);
-              return `<label style="display:flex;gap:8px;padding:4px 0;font-size:12.5px;cursor:pointer;align-items:flex-start;">
-                <input type="checkbox" value="${esc(line)}" ${checked?'checked':''} onchange="qtToggleTerm(this)">
-                <span>${esc(text)}</span>
-              </label>`;
-            }).join('')}
+      <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;max-height:300px;overflow:auto;">
+        ${q.terms.map((t, i) => `
+          <div style="display:flex;gap:6px;align-items:center;padding:3px 0;">
+            <input type="checkbox" ${t.checked?'checked':''} onchange="qtToggleTermAt(${i},this.checked)" title="Include on PDF" />
+            <input type="text" value="${esc((t.text||'').replace(/^\*\s*/, ''))}" oninput="qtEditTermAt(${i}, this.value)" placeholder="Term or condition…" style="flex:1;font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;" />
+            <button type="button" onclick="qtDeleteTermAt(${i})" title="Remove this line" style="background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;padding:0 6px;line-height:1;">×</button>
+          </div>
+        `).join('') || '<div style="font-size:12px;color:var(--text-3);padding:6px 0;">No terms — add one below.</div>'}
+        <div style="display:flex;gap:6px;margin-top:8px;border-top:1px dashed var(--border-soft);padding-top:8px;">
+          <button type="button" class="btn btn-sm" onclick="qtAddTerm()">+ Add line</button>
+          <button type="button" class="btn btn-sm" onclick="qtResetTerms()" title="Reload the default ${q.docType} terms">↺ Reset to defaults</button>
+        </div>
       </div>
     </details>`;
 }
 
-function qtToggleTerm(el) {
+function qtUpdateTermsCount() {
+  const q = qtCurrentRecord();
+  const c = document.getElementById('q-terms-count');
+  if (!c) return;
+  const total = (q.terms||[]).length;
+  const checked = (q.terms||[]).filter(t => t.checked).length;
+  c.textContent = `${checked} of ${total} selected · click to edit`;
+}
+function qtToggleTermAt(i, checked) {
+  const q = qtCurrentRecord();
+  if (!q.terms || !q.terms[i]) return;
+  q.terms[i].checked = !!checked;
+  qtSetCurrentRecord(q);
+  qtUpdateTermsCount();
+}
+function qtEditTermAt(i, text) {
+  const q = qtCurrentRecord();
+  if (!q.terms || !q.terms[i]) return;
+  q.terms[i].text = text;
+  qtSetCurrentRecord(q);
+}
+function qtDeleteTermAt(i) {
+  const q = qtCurrentRecord();
+  if (!q.terms) return;
+  q.terms.splice(i, 1);
+  qtSetCurrentRecord(q);
+  qtRenderTerms();
+}
+function qtAddTerm() {
   const q = qtCurrentRecord();
   if (!Array.isArray(q.terms)) q.terms = [];
-  const v = el.value;
-  if (el.checked) { if (!q.terms.includes(v)) q.terms.push(v); }
-  else            { q.terms = q.terms.filter(t => t !== v); }
+  q.terms.push({ text: '', checked: true });
   qtSetCurrentRecord(q);
-  const c = document.getElementById('q-terms-count');
-  if (c) c.textContent = `${q.terms.length} of ${(QT_TERMS[q.docType]||[]).length} selected`;
+  qtRenderTerms();
+  // Focus the new input so the user can type immediately
+  setTimeout(() => {
+    const inputs = document.querySelectorAll('#q-terms-host input[type="text"]');
+    const last = inputs[inputs.length - 1];
+    if (last) last.focus();
+  }, 0);
+}
+function qtResetTerms() {
+  const q = qtCurrentRecord();
+  q.terms = (QT_TERMS[q.docType] || []).map(t => ({ text: t, checked: true }));
+  qtSetCurrentRecord(q);
+  qtRenderTerms();
 }
 
 function qtCurrentRecord() {
@@ -2609,9 +2665,17 @@ async function qtGeneratePdf(q) {
   y += 30;
 
   // ── 6. Terms & conditions ────────────────────────────────────────────────
-  // Use the user's selected T&C lines if present (multi-select dropdown in form),
-  // falling back to the full default list for older records that have no q.terms.
-  const tcLines = (Array.isArray(q.terms) ? q.terms : QT_TERMS[q.docType] || []).slice();
+  // Use the user's selected T&C lines if present (editable multi-select in
+  // the form). q.terms can be either the new [{text,checked}] shape or the
+  // legacy array of strings. Filter to only checked / non-empty entries.
+  let tcLines;
+  if (Array.isArray(q.terms) && q.terms.length && typeof q.terms[0] === 'object') {
+    tcLines = q.terms.filter(t => t.checked && (t.text || '').trim()).map(t => t.text);
+  } else if (Array.isArray(q.terms)) {
+    tcLines = q.terms.slice();
+  } else {
+    tcLines = (QT_TERMS[q.docType] || []).slice();
+  }
   // Bank info is only relevant when money is being collected (Invoice / Receipt).
   // Quotation and Delivery Note hide it.
   const showBank = q.docType === 'Invoice' || q.docType === 'Receipt';
