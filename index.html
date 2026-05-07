@@ -2282,15 +2282,15 @@ function qtBuildDocHtml(q) {
   }).join('');
 
   return `
-    <div style="font-family:Helvetica,'SF Pro Display',Arial,sans-serif;color:#0f172a;width:794px;font-size:11px;line-height:1.4;background:#fff;box-sizing:border-box;overflow-wrap:anywhere;">
+    <div style="font-family:Helvetica,'SF Pro Display',Arial,sans-serif;color:#0f172a;width:794px;max-width:794px;font-size:11px;line-height:1.4;background:#fff;box-sizing:border-box;overflow:hidden;overflow-wrap:anywhere;">
 
       <!-- Header band: company strip with logo, contact info, and an amber accent line -->
-      <div style="padding:24px 32px 18px;display:flex;align-items:flex-start;gap:18px;border-bottom:3px solid #142a5f;position:relative;">
+      <div style="padding:20px 28px 16px;display:flex;align-items:flex-start;gap:14px;border-bottom:3px solid #142a5f;position:relative;">
         <!-- Amber accent line (sits on top of the navy border) -->
-        <div style="position:absolute;left:32px;right:32px;bottom:-3px;height:3px;background:linear-gradient(90deg,#f59e0b,#142a5f 35%);"></div>
-        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;">
-          <div style="width:46px;height:46px;border-radius:10px;background:#142a5f;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
-            <svg style="width:30px;height:30px;" viewBox="0 0 64 64">
+        <div style="position:absolute;left:28px;right:28px;bottom:-3px;height:3px;background:linear-gradient(90deg,#f59e0b,#142a5f 35%);"></div>
+        <div style="display:flex;align-items:center;gap:10px;flex-shrink:0;min-width:0;">
+          <div style="width:42px;height:42px;border-radius:9px;background:#142a5f;display:flex;align-items:center;justify-content:center;flex-shrink:0;">
+            <svg style="width:28px;height:28px;" viewBox="0 0 64 64">
               <g stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none">
                 <line x1="32" y1="6" x2="32" y2="13"/><line x1="14" y1="13" x2="19" y2="18"/><line x1="50" y1="13" x2="45" y2="18"/><line x1="6" y1="30" x2="12" y2="30"/><line x1="58" y1="30" x2="52" y2="30"/>
               </g>
@@ -2299,41 +2299,41 @@ function qtBuildDocHtml(q) {
             </svg>
           </div>
           <div style="line-height:1.1;">
-            <div style="font-size:18px;font-weight:900;color:#142a5f;letter-spacing:.06em;">BRIGHT</div>
-            <div style="font-size:9px;font-weight:600;letter-spacing:.18em;color:#94a3b8;margin-top:2px;text-transform:uppercase;">Production &amp; Printing</div>
+            <div style="font-size:17px;font-weight:900;color:#142a5f;letter-spacing:.05em;">BRIGHT</div>
+            <div style="font-size:8px;font-weight:600;letter-spacing:.16em;color:#94a3b8;margin-top:2px;text-transform:uppercase;">Production &amp; Printing</div>
           </div>
         </div>
-        <div style="flex:1;text-align:right;font-size:10px;color:#64748b;line-height:1.6;">
+        <div style="flex:1;min-width:0;text-align:right;font-size:9.5px;color:#64748b;line-height:1.6;">
           Thongpong Village, Sikhodtabong District, Vientiane Lao PDR<br>
           <span style="color:#94a3b8;">Tel</span> 020 555 97 992 &nbsp; · &nbsp; <span style="color:#94a3b8;">Email</span> info@brightprinting.la
         </div>
       </div>
 
       <!-- Hero: doc-type label with meta pills (Date / Valid Until / Doc No) -->
-      <div style="padding:26px 32px 18px;display:flex;justify-content:space-between;align-items:flex-end;gap:24px;">
-        <div>
-          <div style="font-size:10.5px;font-weight:700;letter-spacing:.22em;color:#f59e0b;text-transform:uppercase;margin-bottom:4px;">Bright Production &amp; Printing</div>
-          <div style="font-size:34px;font-weight:900;color:#142a5f;letter-spacing:-0.01em;line-height:1;text-transform:uppercase;">${esc(q.docType)}</div>
+      <div style="padding:22px 28px 16px;display:flex;justify-content:space-between;align-items:flex-end;gap:18px;">
+        <div style="min-width:0;flex:1;">
+          <div style="font-size:9.5px;font-weight:700;letter-spacing:.2em;color:#f59e0b;text-transform:uppercase;margin-bottom:4px;">Bright Production &amp; Printing</div>
+          <div style="font-size:28px;font-weight:900;color:#142a5f;letter-spacing:-0.01em;line-height:1;text-transform:uppercase;">${esc(q.docType)}</div>
         </div>
-        <div style="display:flex;gap:8px;flex-shrink:0;">
-          <div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;min-width:90px;">
-            <div style="font-size:8.5px;font-weight:700;letter-spacing:.12em;color:#94a3b8;text-transform:uppercase;">Date</div>
-            <div style="font-size:11px;font-weight:700;color:#0f172a;margin-top:2px;">${niceDate(q.date)}</div>
+        <div style="display:flex;gap:6px;flex-shrink:0;">
+          <div style="border:1px solid #e2e8f0;border-radius:7px;padding:6px 10px;min-width:78px;">
+            <div style="font-size:8px;font-weight:700;letter-spacing:.1em;color:#94a3b8;text-transform:uppercase;">Date</div>
+            <div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-top:1px;white-space:nowrap;">${niceDate(q.date)}</div>
           </div>
-          ${q.validUntil ? `<div style="border:1px solid #e2e8f0;border-radius:8px;padding:8px 12px;min-width:90px;">
-            <div style="font-size:8.5px;font-weight:700;letter-spacing:.12em;color:#94a3b8;text-transform:uppercase;">Valid Until</div>
-            <div style="font-size:11px;font-weight:700;color:#0f172a;margin-top:2px;">${niceDate(q.validUntil)}</div>
+          ${q.validUntil ? `<div style="border:1px solid #e2e8f0;border-radius:7px;padding:6px 10px;min-width:78px;">
+            <div style="font-size:8px;font-weight:700;letter-spacing:.1em;color:#94a3b8;text-transform:uppercase;">Valid Until</div>
+            <div style="font-size:10.5px;font-weight:700;color:#0f172a;margin-top:1px;white-space:nowrap;">${niceDate(q.validUntil)}</div>
           </div>` : ''}
-          <div style="background:#142a5f;color:#fff;border-radius:8px;padding:8px 12px;min-width:90px;">
-            <div style="font-size:8.5px;font-weight:700;letter-spacing:.12em;color:#94a3b8;text-transform:uppercase;">Doc No.</div>
-            <div style="font-size:11px;font-weight:700;color:#fff;margin-top:2px;">${esc(q.docNo)}</div>
+          <div style="background:#142a5f;color:#fff;border-radius:7px;padding:6px 10px;min-width:78px;">
+            <div style="font-size:8px;font-weight:700;letter-spacing:.1em;color:#94a3b8;text-transform:uppercase;">Doc No.</div>
+            <div style="font-size:10.5px;font-weight:700;color:#fff;margin-top:1px;white-space:nowrap;">${esc(q.docNo)}</div>
           </div>
         </div>
       </div>
 
       <!-- Customer card -->
-      <div style="padding:0 32px 18px;">
-        <div style="background:#f8fafc;border-radius:10px;padding:16px 20px;display:grid;grid-template-columns:1fr 1fr;gap:6px 24px;font-size:10.5px;">
+      <div style="padding:0 28px 16px;">
+        <div style="background:#f8fafc;border-radius:10px;padding:14px 18px;display:grid;grid-template-columns:1fr 1fr;gap:5px 20px;font-size:10.5px;">
           <div style="grid-column:1 / -1;font-size:8.5px;font-weight:700;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase;margin-bottom:4px;">Bill To</div>
           <div><div style="color:#94a3b8;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Customer</div><div style="font-weight:700;color:#142a5f;font-size:13px;margin-top:1px;">${esc(q.customer)}</div></div>
           <div><div style="color:#94a3b8;font-size:9.5px;font-weight:600;text-transform:uppercase;letter-spacing:.05em;">Project</div><div style="font-weight:700;color:#142a5f;font-size:13px;margin-top:1px;">${esc(q.project) || '—'}</div></div>
@@ -2347,10 +2347,10 @@ function qtBuildDocHtml(q) {
       </div>
 
       <!-- Items table -->
-      <div style="padding:0 32px;">
+      <div style="padding:0 28px;">
         <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
           <colgroup>
-            <col style="width:38px;"><col style="width:110px;"><col style="width:170px;"><col style="width:56px;"><col style="width:120px;"><col style="width:236px;">
+            <col style="width:36px;"><col style="width:96px;"><col style="width:166px;"><col style="width:54px;"><col style="width:118px;"><col style="width:268px;">
           </colgroup>
           <thead>
             <tr style="background:#142a5f;color:#fff;">
@@ -2366,43 +2366,43 @@ function qtBuildDocHtml(q) {
         </table>
 
         <!-- Totals: minimal label/value rows on the right with a navy Grand Total card -->
-        <div class="qt-no-break" style="display:flex;justify-content:flex-end;margin-top:14px;">
-          <div style="min-width:300px;font-size:11px;">
-            <div style="display:flex;justify-content:space-between;padding:6px 14px;color:#475569;">
-              <span>Subtotal</span><span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;">${qtFmtAmount(t.sub, q.currency)}</span>
+        <div class="qt-no-break" style="display:flex;justify-content:flex-end;margin-top:12px;">
+          <div style="width:320px;max-width:320px;font-size:10.5px;">
+            <div style="display:flex;justify-content:space-between;padding:5px 14px;color:#475569;">
+              <span>Subtotal</span><span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">${qtFmtAmount(t.sub, q.currency)}</span>
             </div>
-            <div style="display:flex;justify-content:space-between;padding:6px 14px;color:#475569;border-bottom:1px solid #e2e8f0;">
-              <span>VAT (${q.vatRate}%)</span><span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;">${qtFmtAmount(t.vat, q.currency)}</span>
+            <div style="display:flex;justify-content:space-between;padding:5px 14px;color:#475569;border-bottom:1px solid #e2e8f0;">
+              <span>VAT (${q.vatRate}%)</span><span style="font-variant-numeric:tabular-nums;font-weight:600;color:#0f172a;white-space:nowrap;">${qtFmtAmount(t.vat, q.currency)}</span>
             </div>
-            <div style="margin-top:8px;background:#142a5f;color:#fff;border-radius:10px;padding:14px 18px;display:flex;justify-content:space-between;align-items:baseline;">
-              <div>
-                <div style="font-size:8.5px;font-weight:700;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase;">Grand Total</div>
-                <div style="font-size:9px;color:#cbd5e1;margin-top:2px;">${esc(q.currency)}</div>
+            <div style="margin-top:6px;background:#142a5f;color:#fff;border-radius:9px;padding:12px 16px;display:flex;justify-content:space-between;align-items:baseline;gap:10px;">
+              <div style="min-width:0;">
+                <div style="font-size:8px;font-weight:700;letter-spacing:.16em;color:#94a3b8;text-transform:uppercase;">Grand Total</div>
+                <div style="font-size:8.5px;color:#cbd5e1;margin-top:2px;">${esc(q.currency)}</div>
               </div>
-              <div style="font-size:20px;font-weight:900;letter-spacing:-0.01em;font-variant-numeric:tabular-nums;">${qtFmtAmount(t.grand, q.currency)}</div>
+              <div style="font-size:17px;font-weight:900;letter-spacing:-0.01em;font-variant-numeric:tabular-nums;white-space:nowrap;">${qtFmtAmount(t.grand, q.currency)}</div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- Terms & conditions -->
-      <div style="padding:22px 32px 0;font-size:10px;">
-        <div style="font-size:8.5px;font-weight:700;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Terms &amp; Conditions</div>
-        <div style="background:#fafbfc;border-left:3px solid #f59e0b;border-radius:0 8px 8px 0;padding:12px 16px;color:#475569;">
-          ${tcBullets.map(line => `<div style="font-size:10px;line-height:1.6;">${esc(line.replace(/^\*\s*/, '• '))}</div>`).join('')}
+      <div style="padding:18px 28px 0;font-size:10px;">
+        <div style="font-size:8.5px;font-weight:700;letter-spacing:.16em;color:#94a3b8;text-transform:uppercase;margin-bottom:6px;">Terms &amp; Conditions</div>
+        <div style="background:#fafbfc;border-left:3px solid #f59e0b;border-radius:0 8px 8px 0;padding:10px 14px;color:#475569;">
+          ${tcBullets.map(line => `<div style="font-size:9.5px;line-height:1.55;">${esc(line.replace(/^\*\s*/, '• '))}</div>`).join('')}
         </div>
       </div>
 
       <!-- Signature blocks -->
-      <div class="qt-no-break" style="padding:36px 32px 24px;display:grid;grid-template-columns:1fr 1fr;gap:40px;font-size:10.5px;">
-        <div>
-          <div style="height:36px;border-bottom:1.5px solid #0f172a;"></div>
-          <div style="margin-top:6px;font-size:8.5px;font-weight:700;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase;">${esc(sigLeft.replace(' :',''))}</div>
+      <div class="qt-no-break" style="padding:30px 28px 20px;display:grid;grid-template-columns:1fr 1fr;gap:32px;font-size:10.5px;">
+        <div style="min-width:0;">
+          <div style="height:34px;border-bottom:1.5px solid #0f172a;"></div>
+          <div style="margin-top:6px;font-size:8px;font-weight:700;letter-spacing:.16em;color:#94a3b8;text-transform:uppercase;">${esc(sigLeft.replace(' :',''))}</div>
           <div style="font-weight:700;color:#142a5f;margin-top:2px;">${esc(q.customer)}</div>
         </div>
-        <div>
-          <div style="height:36px;border-bottom:1.5px solid #0f172a;"></div>
-          <div style="margin-top:6px;font-size:8.5px;font-weight:700;letter-spacing:.18em;color:#94a3b8;text-transform:uppercase;">Prepared By</div>
+        <div style="min-width:0;">
+          <div style="height:34px;border-bottom:1.5px solid #0f172a;"></div>
+          <div style="margin-top:6px;font-size:8px;font-weight:700;letter-spacing:.16em;color:#94a3b8;text-transform:uppercase;">Prepared By</div>
           <div style="font-weight:700;color:#142a5f;margin-top:2px;">BRIGHT PRODUCTION &amp; PRINTING</div>
         </div>
       </div>
