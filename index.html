@@ -1750,21 +1750,43 @@ function qtPreviewByDoc(qId, docType) {
   const name = f ? f.name : path.split('/').pop();
   qtShowInPanel(path, name);
 }
+// Open the edit form on a record with a specific doc type pre-selected. Used
+// by the gray "not generated yet" timeline badges so the user can jump
+// straight into the right step.
+function qtOpenAtDocType(qId, docType) {
+  const idx = QUOTATIONS.findIndex(x => x.id === qId);
+  if (idx < 0) { showToast('Record not found'); return; }
+  // Persist the desired starting doc type so the form opens already on it
+  QUOTATIONS[idx].docType = docType;
+  // Reset T&C to the new type's defaults so the dropdown reflects the switch
+  QUOTATIONS[idx].terms = (QT_TERMS[docType] || []).map(t => ({ text: t, checked: true }));
+  qtPersistRecords();
+  openQuotationModal(qId);
+}
 
 function renderQuotations() {
   // Group records by customer for the "records" header line
   const byCust = {};
   QUOTATIONS.forEach(q => { (byCust[q.customer || 'Unassigned'] = byCust[q.customer || 'Unassigned'] || []).push(q); });
 
+  // Always render the full Quotation → Invoice → Delivery Note → Receipt
+  // timeline so the row makes the workflow state obvious. Generated docs are
+  // bright/clickable-to-preview; not-yet-generated docs are gray/clickable-
+  // to-open-the-form-on-that-type so the user can produce the missing PDF.
+  // Short labels keep the column compact: Quote · Inv · DN · Rcpt.
+  const SHORT = { 'Quotation':'Quote', 'Invoice':'Inv', 'Delivery Note':'DN', 'Receipt':'Rcpt' };
   const renderBadges = q => {
-    const list = q.generated || [];
-    if (!list.length) return `<span class="badge" onclick="event.stopPropagation();openQuotationModal('${q.id}')" title="Open form to generate a PDF" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;cursor:pointer;user-select:none;">draft</span>`;
-    return list.map(g => {
-      const f = qtFindPdf(q, g);
-      const activePath = f ? f.path : qtBuildPath(q, g);
-      const isActive = qtSelectedFile && qtSelectedFile.path === activePath;
-      const tip = f ? `Click to preview ${f.name}` : 'Click to preview (file may still be syncing)';
-      return `<span class="badge" onclick="event.stopPropagation();qtPreviewByDoc('${q.id}','${g}')" title="${tip}" style="background:${isActive?'var(--accent)':'var(--accent-soft)'};color:${isActive?'#fff':'var(--accent)'};font-size:10px;cursor:pointer;user-select:none;">👁 ${g}</span>`;
+    const generated = new Set(q.generated || []);
+    return QT_DOC_TYPES.map(g => {
+      const short = SHORT[g] || g;
+      if (generated.has(g)) {
+        const f = qtFindPdf(q, g);
+        const activePath = f ? f.path : qtBuildPath(q, g);
+        const isActive = qtSelectedFile && qtSelectedFile.path === activePath;
+        const tip = f ? `Click to preview ${f.name}` : 'Click to preview (file may still be syncing)';
+        return `<span class="badge" onclick="event.stopPropagation();qtPreviewByDoc('${q.id}','${g}')" title="${tip}" style="background:${isActive?'var(--accent)':'var(--accent-soft)'};color:${isActive?'#fff':'var(--accent)'};font-size:10px;cursor:pointer;user-select:none;">👁 ${short}</span>`;
+      }
+      return `<span class="badge" onclick="event.stopPropagation();qtOpenAtDocType('${q.id}','${g}')" title="Not generated yet — click to open the form on ${g}" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;cursor:pointer;user-select:none;opacity:.85;">${short}</span>`;
     }).join(' ');
   };
 
