@@ -1690,7 +1690,11 @@ let qtPaneCollapsed = false;
 let qtSelectedFile = null; // {customer, file} for preview
 
 function quotationFileCount() {
-  return QUOTATION_FILES.reduce((n, c) => n + c.files.length, 0);
+  return QUOTATION_FILES.reduce((n, c) => {
+    let count = (c.files || []).length;
+    (c.projects || []).forEach(p => { count += (p.files || []).length; });
+    return n + count;
+  }, 0);
 }
 
 // Talk to the local bridge. Returns null + sets qtBridgeOk=false on connection failure.
@@ -1728,21 +1732,28 @@ function renderQuotations() {
     </tr>
   `).join('');
 
+  // Render one file row. Used by both customer-level (legacy) and project-level files.
+  const fileRow = (f, indent) => `
+    <div class="qt-file kind-${f.type} ${qtSelectedFile && qtSelectedFile.path===f.path ? 'active':''}"
+         style="padding-left:${indent}px;"
+         onclick="qtSelectFile('${f.path.replace(/'/g,"\\'")}', '${f.type}')">
+      <svg class="qt-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+      </svg>
+      <div style="flex:1;min-width:0;overflow:hidden;">
+        <div class="qt-file-name">${f.name}</div>
+        <div class="qt-file-meta">${qtFmtBytes(f.size)} · ${new Date(f.mtime).toLocaleDateString()}</div>
+      </div>
+    </div>`;
   const fileTreeHtml = QUOTATION_FILES.length === 0
     ? `<div class="qt-preview-empty" style="color:var(--text-3);">${qtBridgeOk===false?'<strong>Bridge offline.</strong><br>Start the bridge then click Refresh.':'No files yet — generate a PDF to see it here.'}</div>`
     : QUOTATION_FILES.map(c => `
         <div class="qt-customer">${c.name}</div>
-        ${c.files.map(f => `
-          <div class="qt-file kind-${f.type} ${qtSelectedFile && qtSelectedFile.path===f.path ? 'active':''}"
-               onclick="qtSelectFile('${f.path.replace(/'/g,"\\'")}', '${f.type}')">
-            <svg class="qt-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-            </svg>
-            <div style="flex:1;min-width:0;overflow:hidden;">
-              <div class="qt-file-name">${f.name}</div>
-              <div class="qt-file-meta">${qtFmtBytes(f.size)} · ${new Date(f.mtime).toLocaleDateString()}</div>
-            </div>
-          </div>`).join('')}
+        ${(c.files || []).map(f => fileRow(f, 24)).join('')}
+        ${(c.projects || []).map(p => `
+          <div class="qt-project" style="padding:5px 14px 4px 22px;font-size:11px;font-weight:600;color:var(--text-2);background:#f6f8fb;border-top:1px solid var(--border-soft);">📁 ${p.name}</div>
+          ${p.files.map(f => fileRow(f, 38)).join('')}
+        `).join('')}
       `).join('');
 
   const previewHtml = qtSelectedFile
@@ -2089,23 +2100,17 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
   const q = qtReadFormIntoRecord();
   if (!q.customer) { showToast('Customer is required'); return; }
   if (!q.docNo)    { showToast('Doc No. is required'); return; }
+  if (generatePdf && !q.project) { showToast('Project is required for the folder name'); return; }
 
-  // Persist in-memory record
+  // Persist in-memory record (and to localStorage so it survives page reload — the
+  // user asked us not to write JSON files into the Synology folder anymore).
   if (isEdit) {
     const idx = QUOTATIONS.findIndex(x => x.id === id);
     if (idx >= 0) QUOTATIONS[idx] = q;
   } else {
     QUOTATIONS.push(q);
   }
-
-  // Always write the JSON record alongside the PDFs so we can reload + edit later
-  const safeCust = qtSafeFolder(q.customer);
-  const recordPath = `${safeCust}/${q.docNo}_record.json`;
-  await qtFetch('/api/save', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: recordPath, contentText: JSON.stringify(q, null, 2) }),
-  });
+  qtPersistRecords();
 
   if (generatePdf) {
     await qtGeneratePdf(q);
@@ -2117,9 +2122,23 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
   if (currentView === 'quotations') render();
 }
 
+// Browser-only persistence — keeps the in-memory QUOTATIONS array across reloads
+// without leaving JSON files on disk in the Synology folder.
+const QT_LS_KEY = 'qt_records_v1';
+function qtPersistRecords() {
+  try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
+}
+function qtLoadRecords() {
+  try {
+    const raw = localStorage.getItem(QT_LS_KEY);
+    if (raw) QUOTATIONS = JSON.parse(raw) || [];
+  } catch(e) {}
+}
+
 async function qtDeleteRecord(id) {
   if (!confirm('Delete this quotation record? PDFs already on disk are kept.')) return;
   QUOTATIONS = QUOTATIONS.filter(x => x.id !== id);
+  qtPersistRecords();
   closeModal();
   if (currentView === 'quotations') render();
 }
@@ -2154,13 +2173,16 @@ async function qtGeneratePdf(q) {
       pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
     }).from(card).outputPdf('blob');
     const b64 = await blobToBase64(blob);
+    // Folder layout: <Customer>/<Project>/<filename>.pdf — one subfolder per project
+    // so a customer with multiple jobs stays organized.
     const safeCust = qtSafeFolder(q.customer);
+    const safeProj = qtSafeFolder(q.project || 'Untitled Project');
     const safeDoc  = q.docType.replace(/\s+/g,'');
     const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
     const result = await qtFetch('/api/save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: `${safeCust}/${filename}`, contentBase64: b64 }),
+      body: JSON.stringify({ path: `${safeCust}/${safeProj}/${filename}`, contentBase64: b64 }),
     });
     if (result?.ok) {
       if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
@@ -2181,104 +2203,149 @@ function blobToBase64(blob) {
   });
 }
 
-// Build the printable HTML for the chosen doc type. Mirrors the Excel template:
-// company header + doc-type title, customer block, project line, line-items table,
-// totals box, payment + T&C blocks, signature lines.
+// Build the printable HTML for the chosen doc type — matches the BRIGHT
+// template: full-width navy header bar, centered doc-type banner, customer
+// info block on the left, 3 stacked date boxes on the right, navy-headed
+// items table, green-highlighted grand total, T&C + signature blocks.
 function qtBuildDocHtml(q) {
   const t = qtTotals(q);
   const esc = s => (s ?? '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-  const niceDate = s => s ? parseLocalDate(s).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '';
-  const lines = q.items.map((it, i) => `
-    <tr>
-      <td style="text-align:center;">${i+1}</td>
-      <td style="text-align:center;">${it.photoData ? `<img src="${it.photoData}" style="max-width:70px;max-height:70px;object-fit:contain;">` : ''}</td>
-      <td style="white-space:pre-wrap;line-height:1.5;word-break:break-word;">${esc(it.description)}</td>
-      <td style="text-align:center;">${it.qty}</td>
-      <td style="text-align:right;">${qtFmtAmount(it.unitPrice, q.currency)}</td>
-      <td style="text-align:right;">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</td>
-    </tr>
-  `).join('');
+  // Date format on the doc itself: dd-MMM-yy (matches template, e.g. "17-Feb-26")
+  const niceDate = s => {
+    if (!s) return '';
+    const d = parseLocalDate(s);
+    const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return String(d.getDate()).padStart(2,'0') + '-' + months[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
+  };
 
-  const termsHeading = { 'Quotation':'Terms and Conditions:', 'Invoice':'Payment Details:', 'Delivery Note':'Delivery Information:', 'Receipt':'Receipt Notes:' }[q.docType];
-  const termsBody    = QT_TERMS[q.docType].map(line => `<div>${esc(line)}</div>`).join('');
-  const sigLeft  = { 'Quotation':'Prepared by', 'Invoice':'Issued by',     'Delivery Note':'Delivered by',  'Receipt':'Received by' }[q.docType];
-  const sigRight = { 'Quotation':'Approved by', 'Invoice':'Customer Sign', 'Delivery Note':'Customer Sign', 'Receipt':'Customer Sign' }[q.docType];
+  // Description: first non-empty line is rendered bold (item title), the rest
+  // (typically bullet items the user types on subsequent lines) appear smaller.
+  const descCell = it => {
+    const lines = (it.description || '').split('\n');
+    const firstIdx = lines.findIndex(l => l.trim());
+    if (firstIdx === -1) return '';
+    const head = lines[firstIdx];
+    const tail = lines.slice(firstIdx + 1);
+    return `<div style="font-weight:700;font-size:11.5px;margin-bottom:3px;">${esc(head)}</div>` +
+      tail.filter(l => l.length).map(l => `<div style="font-size:10.5px;color:#1a1d23;">${esc(l)}</div>`).join('');
+  };
+
+  const lines = q.items.map((it, i) => {
+    const amt = (+it.qty||0) * (+it.unitPrice||0);
+    return `
+      <tr>
+        <td style="text-align:center;font-weight:700;">${i+1}</td>
+        <td style="text-align:center;">${it.photoData ? `<img src="${it.photoData}" style="max-width:120px;max-height:120px;object-fit:contain;">` : ''}</td>
+        <td style="vertical-align:top;line-height:1.5;">${descCell(it)}</td>
+        <td style="text-align:center;">${it.qty}</td>
+        <td style="text-align:right;">${qtFmtAmount(it.unitPrice, q.currency)}</td>
+        <td style="text-align:right;">${qtFmtAmount(amt, q.currency)}</td>
+      </tr>
+    `;
+  }).join('');
+
+  // T&C + signature labels per doc type. Bank info is appended as extra T&C
+  // bullets so the doc still surfaces payment info without a separate panel.
+  const sigLeft  = q.docType === 'Quotation' ? 'Approved by :'
+                 : q.docType === 'Receipt'   ? 'Received by :'
+                 : 'Customer Sign :';
+  const tcBullets = QT_TERMS[q.docType].slice();
+  if (q.bankName)  tcBullets.push(`* Bank Name: ${q.bankName}  ·  Account No.: ${q.accountNo}  ·  Account Name: ${q.accountName || 'Bright Production and Printing'}`);
+  if (q.notes)     tcBullets.push('* ' + q.notes);
 
   return `
-    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:14px 18px;font-size:11px;line-height:1.4;background:#fff;box-sizing:border-box;overflow-wrap:anywhere;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #142a5f;padding-bottom:10px;margin-bottom:14px;">
-        <div>
-          <div style="font-size:18px;font-weight:800;color:#142a5f;letter-spacing:.02em;">BRIGHT PRODUCTION &amp; PRINTING</div>
-          <div style="font-size:9.5px;color:#475569;margin-top:3px;">Thongpong Village, Sikhodtabong District, Vientiane Lao PDR</div>
-          <div style="font-size:9.5px;color:#475569;">Tel: 020 555 97 992 &nbsp;·&nbsp; Email: info@brightprinting.la</div>
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;font-size:11px;line-height:1.4;background:#fff;box-sizing:border-box;overflow-wrap:anywhere;">
+
+      <!-- Top banner: white logo block on navy bar with company address centered -->
+      <div style="background:#142a5f;color:#fff;padding:8px 14px;display:flex;align-items:center;gap:14px;">
+        <div style="display:flex;align-items:center;gap:6px;background:#fff;padding:5px 12px;border-radius:3px;flex-shrink:0;">
+          <svg style="width:26px;height:26px;flex-shrink:0;" viewBox="0 0 64 64">
+            <g stroke="#f59e0b" stroke-width="3" stroke-linecap="round" fill="none">
+              <line x1="32" y1="6" x2="32" y2="13"/><line x1="14" y1="13" x2="19" y2="18"/><line x1="50" y1="13" x2="45" y2="18"/><line x1="6" y1="30" x2="12" y2="30"/><line x1="58" y1="30" x2="52" y2="30"/>
+            </g>
+            <path d="M32 14c-8 0-14 6-14 13 0 5 2 9 6 11v4c0 1 1 2 2 2h12c1 0 2-1 2-2v-4c4-2 6-6 6-11 0-7-6-13-14-13z" fill="#f59e0b"/>
+            <rect x="26" y="46" width="12" height="3" rx="1.5" fill="#f59e0b"/><rect x="28" y="51" width="8" height="2" rx="1" fill="#f59e0b"/>
+          </svg>
+          <div style="line-height:1;">
+            <div style="font-size:16px;font-weight:900;color:#142a5f;letter-spacing:.05em;">BR<span style="color:#f59e0b;">●</span>GHT</div>
+            <div style="font-size:7px;font-weight:600;letter-spacing:.04em;color:#475569;margin-top:2px;">Production &amp; Printing</div>
+          </div>
         </div>
-        <div style="text-align:right;">
-          <div style="font-size:22px;font-weight:800;color:#f59e0b;text-transform:uppercase;letter-spacing:.04em;">${q.docType}</div>
-          <div style="font-size:10px;color:#475569;margin-top:6px;"><strong>Doc No.:</strong> ${esc(q.docNo)}</div>
-          <div style="font-size:10px;color:#475569;"><strong>Date:</strong> ${niceDate(q.date)}</div>
-          ${q.validUntil ? `<div style="font-size:10px;color:#475569;"><strong>Valid Until:</strong> ${niceDate(q.validUntil)}</div>` : ''}
-          <div style="font-size:10px;color:#475569;"><strong>Currency:</strong> ${esc(q.currency)}</div>
+        <div style="flex:1;text-align:center;font-size:11.5px;font-weight:500;">
+          Thongpong Village, Sikhodtabong district, Vientiane Lao PDR &nbsp;·&nbsp; Mobile: 020 555 97 992
         </div>
       </div>
 
-      <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:10.5px;">
-        <tr>
-          <td style="padding:3px 0;width:120px;color:#64748b;">Attention to:</td><td style="padding:3px 0;font-weight:600;">${esc(q.customer)}</td>
-          <td style="padding:3px 0;width:120px;color:#64748b;">Contact Person:</td><td style="padding:3px 0;">${esc(q.contactPerson)}</td>
-        </tr>
-        <tr>
-          <td style="padding:3px 0;color:#64748b;">Address:</td><td style="padding:3px 0;">${esc(q.address)}</td>
-          <td style="padding:3px 0;color:#64748b;">Contact Number:</td><td style="padding:3px 0;">${esc(q.contactNumber)}</td>
-        </tr>
-        <tr>
-          <td style="padding:3px 0;color:#64748b;">Office Number:</td><td style="padding:3px 0;">${esc(q.officeNumber)}</td>
-          <td style="padding:3px 0;color:#64748b;">Email:</td><td style="padding:3px 0;">${esc(q.email)}</td>
-        </tr>
-      </table>
-
-      <div style="background:#f1f5f9;padding:6px 10px;border-radius:5px;margin-bottom:10px;font-size:11px;">
-        <strong style="color:#142a5f;">Project:</strong> ${esc(q.project)}
+      <!-- Meta row: customer info on the left, doc-type title + date boxes on the right -->
+      <div style="padding:12px 16px 0;display:grid;grid-template-columns:1fr 200px;gap:18px;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;">
+          <tr><td style="padding:2px 8px 2px 0;width:120px;">Attention to:</td><td style="padding:2px 0;font-weight:700;">${esc(q.customer)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">Address:</td><td style="padding:2px 0;">${esc(q.address)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">office Number:</td><td style="padding:2px 0;">${esc(q.officeNumber)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">Contact person:</td><td style="padding:2px 0;">${esc(q.contactPerson)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">Contact Number:</td><td style="padding:2px 0;">${esc(q.contactNumber)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">Email:</td><td style="padding:2px 0;">${esc(q.email)}</td></tr>
+          <tr><td style="padding:2px 8px 2px 0;">Project:</td><td style="padding:2px 0;font-weight:700;">${esc(q.project)}</td></tr>
+        </table>
+        <div style="align-self:start;">
+          <div style="background:#142a5f;color:#fff;text-align:center;font-size:15px;font-weight:700;padding:8px;letter-spacing:.02em;">${esc(q.docType)}</div>
+          <div style="border:1.5px solid #142a5f;border-top:0;">
+            <div style="background:#142a5f;color:#fff;text-align:center;padding:5px 8px;font-weight:700;font-size:11.5px;border-bottom:1px solid #fff;">${niceDate(q.date)}</div>
+            ${q.validUntil ? `<div style="background:#142a5f;color:#fff;text-align:center;padding:5px 8px;font-weight:700;font-size:11.5px;border-bottom:1px solid #fff;">${niceDate(q.validUntil)}</div>` : ''}
+            <div style="background:#142a5f;color:#fff;text-align:center;padding:5px 8px;font-weight:700;font-size:11.5px;">${esc(q.docNo)}</div>
+          </div>
+        </div>
       </div>
 
-      <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;table-layout:fixed;">
-        <thead>
-          <tr style="background:#142a5f;color:#fff;">
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:30px;">No.</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:80px;">Sample</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;text-align:left;">Description</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:50px;">Qty</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:100px;">Unit Price</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:110px;">Amount</th>
+      <!-- Items table -->
+      <div style="padding:14px 16px 0;">
+        <table style="width:100%;border-collapse:collapse;font-size:11px;table-layout:fixed;">
+          <colgroup>
+            <col style="width:60px;"><col style="width:130px;"><col><col style="width:50px;"><col style="width:80px;"><col style="width:90px;">
+          </colgroup>
+          <thead>
+            <tr style="background:#142a5f;color:#fff;font-weight:700;">
+              <th style="padding:8px 4px;border:1px solid #142a5f;line-height:1.25;">Project/Product<br>code</th>
+              <th style="padding:8px 4px;border:1px solid #142a5f;">Sample picture</th>
+              <th style="padding:8px 4px;border:1px solid #142a5f;text-align:left;">Description</th>
+              <th style="padding:8px 4px;border:1px solid #142a5f;">Unit</th>
+              <th style="padding:8px 4px;border:1px solid #142a5f;">Unit Price</th>
+              <th style="padding:8px 4px;border:1px solid #142a5f;">Amount</th>
+            </tr>
+          </thead>
+          <tbody>${lines.replace(/<td/g,'<td style="border:1px solid #94a3b8;padding:8px 6px;vertical-align:middle;')}</tbody>
+        </table>
+
+        <!-- Totals: regular rows + green highlighted Grand Total -->
+        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:-1px;">
+          <colgroup><col><col style="width:90px;"></colgroup>
+          <tr><td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">Total ${esc(q.currency)}</td>
+              <td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">${qtFmtAmount(t.sub, q.currency)}</td></tr>
+          <tr><td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">VAT ${q.vatRate}%</td>
+              <td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">${qtFmtAmount(t.vat, q.currency)}</td></tr>
+          <tr style="background:#cfe9c9;">
+            <td style="padding:9px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;font-size:13px;">Grand Total ${esc(q.currency)}</td>
+            <td style="padding:9px 12px;text-align:right;font-weight:700;font-style:italic;color:#dc2626;font-size:14px;border:1px solid #94a3b8;">${qtFmtAmount(t.grand, q.currency)}</td>
           </tr>
-        </thead>
-        <tbody style="background:#fff;">${lines.replace(/<td/g,'<td style="border:1px solid #cbd5e1;padding:6px 5px;vertical-align:top;')}</tbody>
-      </table>
-
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-        <table style="font-size:11px;border-collapse:collapse;min-width:280px;">
-          <tr><td style="padding:4px 12px;color:#64748b;">Subtotal:</td><td style="padding:4px 12px;text-align:right;">${qtFmtAmount(t.sub, q.currency)}</td></tr>
-          <tr><td style="padding:4px 12px;color:#64748b;">VAT (${q.vatRate}%):</td><td style="padding:4px 12px;text-align:right;">${qtFmtAmount(t.vat, q.currency)}</td></tr>
-          <tr style="background:#142a5f;color:#fff;font-weight:700;font-size:12.5px;"><td style="padding:6px 12px;">Grand Total:</td><td style="padding:6px 12px;text-align:right;">${qtFmtAmount(t.grand, q.currency)}</td></tr>
         </table>
       </div>
 
-      <div style="display:flex;gap:14px;margin-bottom:14px;font-size:10px;">
-        <div style="flex:1;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:3px;">
-          <div style="font-weight:700;margin-bottom:4px;color:#92400e;">${esc(termsHeading)}</div>
-          ${termsBody}
-        </div>
-        <div style="flex:1;padding:8px 12px;background:#eff6ff;border-left:3px solid #142a5f;border-radius:3px;">
-          <div style="font-weight:700;margin-bottom:4px;color:#142a5f;">Payment Details:</div>
-          <div>* Account Name: Bright Production and Printing</div>
-          <div>* Bank Name: ${esc(q.bankName)}</div>
-          <div>* Account No.: ${esc(q.accountNo)}</div>
-          ${q.notes ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1;">${esc(q.notes)}</div>` : ''}
-        </div>
+      <!-- Terms & conditions -->
+      <div style="padding:14px 16px 0;font-size:11px;">
+        <div style="font-weight:700;margin-bottom:4px;">Terms and conditions:</div>
+        ${tcBullets.map(line => `<div style="font-size:10.5px;line-height:1.55;">${esc(line)}</div>`).join('')}
       </div>
 
-      <div style="display:flex;gap:24px;margin-top:22px;font-size:10px;">
-        <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigLeft)}</div>
-        <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigRight)}</div>
+      <!-- Signature blocks -->
+      <div style="padding:30px 16px 14px;display:grid;grid-template-columns:1fr 1fr;gap:30px;font-size:11px;text-align:center;">
+        <div>
+          <div style="font-weight:700;text-decoration:underline;margin-bottom:6px;">${esc(sigLeft)}</div>
+          <div style="font-weight:700;">${esc(q.customer)}</div>
+        </div>
+        <div>
+          <div style="font-weight:700;text-decoration:underline;margin-bottom:6px;">Prepared by</div>
+          <div style="font-weight:700;">BRIGHT PRODUCTION &amp; PRINTING</div>
+        </div>
       </div>
     </div>
   `;
@@ -2717,6 +2784,7 @@ document.getElementById('search-input').addEventListener('input', e => { const q
 
 (async () => {
   await loadAll();
+  qtLoadRecords();
   bindNav();
   setView('tasks');
   // Realtime subscriptions for multi-device sync
