@@ -2121,15 +2121,31 @@ function qtRenderSignature() {
   if (!host) return;
   const q = qtCurrentRecord();
   const saved = qtGetDefaultSig();
+  // Blank state: explicit "no signature" — overrides upload, default, and logo.
+  if (q.signatureBlank) {
+    host.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="height:80px;width:180px;border:1px dashed var(--border);background:#fff;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--text-3);font-size:12px;">— No signature —</div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload</button>
+            <button type="button" class="btn btn-sm" onclick="qtUnblankSignature()">↺ Restore default</button>
+          </div>
+          <span style="font-size:11.5px;color:var(--text-3);">Quotation PDF will print an empty signature box.</span>
+        </div>
+      </div>`;
+    return;
+  }
   if (q.signature) {
     const isAlreadyDefault = saved === q.signature;
     host.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <img src="${q.signature}" style="max-height:80px;max-width:260px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
         <div style="display:flex;flex-direction:column;gap:4px;">
-          <div style="display:flex;gap:6px;">
+          <div style="display:flex;gap:6px;flex-wrap:wrap;">
             <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Replace</button>
-            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Use default</button>
+            <button type="button" class="btn btn-sm" onclick="qtClearSignature()">Use default</button>
+            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtBlankSignature()">🚫 Blank</button>
           </div>
           ${isAlreadyDefault
             ? '<span style="font-size:11.5px;color:var(--accent);">★ This is your default signature</span>'
@@ -2144,12 +2160,13 @@ function qtRenderSignature() {
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
           <img src="${saved}" style="max-height:80px;max-width:260px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
           <div style="display:flex;flex-direction:column;gap:4px;">
-            <div style="display:flex;gap:6px;">
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
               <button type="button" class="btn btn-sm" onclick="qtUseDefaultSignature()">Use as record signature</button>
               <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Upload different</button>
+              <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtBlankSignature()">🚫 Blank</button>
             </div>
-            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearDefaultSigUI()">Clear default</button>
-            <span style="font-size:11.5px;color:var(--text-3);">★ Default signature · used on every PDF unless replaced</span>
+            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearDefaultSigUI()">Clear saved default</button>
+            <span style="font-size:11.5px;color:var(--text-3);">★ Default signature · used on every Quotation unless replaced or blanked.</span>
           </div>
         </div>`;
     } else {
@@ -2161,7 +2178,10 @@ function qtRenderSignature() {
             <div style="width:100%;height:100%;">${logoMarkup}</div>
           </div>
           <div style="display:flex;flex-direction:column;gap:4px;">
-            <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload signature</button>
+            <div style="display:flex;gap:6px;flex-wrap:wrap;">
+              <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload signature</button>
+              <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtBlankSignature()">🚫 Blank</button>
+            </div>
             <span style="font-size:11.5px;color:var(--text-3);">No default set · Bright logo will be used. Upload once, then click ★ Save as default.</span>
           </div>
         </div>`;
@@ -2169,6 +2189,21 @@ function qtRenderSignature() {
       if (dup) dup.removeAttribute('id');
     }
   }
+}
+// Mark this record as "no signature on the PDF" — overrides upload, default,
+// and the logo fallback. Quotation PDF prints an empty signature box.
+function qtBlankSignature() {
+  const q = qtCurrentRecord();
+  q.signature = '';
+  q.signatureBlank = true;
+  qtSetCurrentRecord(q);
+  qtRenderSignature();
+}
+function qtUnblankSignature() {
+  const q = qtCurrentRecord();
+  q.signatureBlank = false;
+  qtSetCurrentRecord(q);
+  qtRenderSignature();
 }
 function qtSaveCurrentAsDefault() {
   const q = qtCurrentRecord();
@@ -2200,6 +2235,7 @@ function qtPickSignature() {
     r.onload = () => {
       const q = qtCurrentRecord();
       q.signature = r.result;
+      q.signatureBlank = false; // upload always overrides a prior Blank state
       qtSetCurrentRecord(q);
       qtRenderSignature();
     };
@@ -2210,6 +2246,7 @@ function qtPickSignature() {
 function qtClearSignature() {
   const q = qtCurrentRecord();
   q.signature = '';
+  q.signatureBlank = false;
   qtSetCurrentRecord(q);
   qtRenderSignature();
 }
@@ -2861,8 +2898,9 @@ async function qtGeneratePdf(q) {
   const sigW = (CW - 12) / 2;
   // Signature is ONLY applied to Quotations — Invoice, Delivery Note, and
   // Receipt are signed by hand at delivery/payment, so they leave the box
-  // empty. For Quotations: per-record upload → saved default → Bright logo.
-  if (q.docType === 'Quotation') {
+  // empty. For Quotations: q.signatureBlank → empty, otherwise per-record
+  // upload → saved default → Bright logo.
+  if (q.docType === 'Quotation' && !q.signatureBlank) {
     try {
       const sigSrc = q.signature || qtGetDefaultSig();
       if (sigSrc) {
