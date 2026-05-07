@@ -2305,14 +2305,16 @@ async function qtGeneratePdf(q) {
     return;
   }
 
-  // Pre-render description as multi-line text (bold first line). autotable
-  // will measure these strings and wrap them to fit the column.
+  // Flatten any newlines/extra whitespace in the description so each item shows
+  // on a single visual line (autotable will only wrap once the line truly
+  // exceeds the column width).
+  const flatDesc = s => (s || '').replace(/\s*\n+\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
   const bodyRows = q.items.map((it, i) => {
     const amt = (+it.qty||0) * (+it.unitPrice||0);
     return [
       i + 1,
       '',                           // photo cell (drawn in didDrawCell)
-      it.description || '',
+      flatDesc(it.description),
       it.qty,
       qtFmtAmount(it.unitPrice, q.currency),
       qtFmtAmount(amt, q.currency),
