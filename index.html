@@ -2232,8 +2232,8 @@ function qtBuildDocHtml(q) {
     if (firstIdx === -1) return '';
     const head = lines[firstIdx];
     const tail = lines.slice(firstIdx + 1);
-    return `<div style="font-weight:700;font-size:11.5px;margin-bottom:3px;">${esc(head)}</div>` +
-      tail.filter(l => l.length).map(l => `<div style="font-size:10.5px;color:#1a1d23;">${esc(l)}</div>`).join('');
+    return `<div style="font-weight:700;font-size:10px;line-height:1.25;margin-bottom:1px;">${esc(head)}</div>` +
+      tail.filter(l => l.length).map(l => `<div style="font-size:9px;line-height:1.3;color:#1a1d23;">${esc(l)}</div>`).join('');
   };
 
   const lines = q.items.map((it, i) => {
@@ -2319,7 +2319,7 @@ function qtBuildDocHtml(q) {
               <th style="padding:8px 4px;border:1px solid #142a5f;">Amount</th>
             </tr>
           </thead>
-          <tbody>${lines.replace(/<td/g,'<td style="border:1px solid #94a3b8;padding:8px 6px;vertical-align:middle;')}</tbody>
+          <tbody>${lines.replace(/<td/g,'<td style="border:1px solid #94a3b8;padding:5px 6px;vertical-align:middle;')}</tbody>
         </table>
 
         <!-- Totals: regular rows + green highlighted Grand Total -->
