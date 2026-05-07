@@ -7,6 +7,7 @@
 <link rel="icon" href="data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'><rect width='64' height='64' rx='12' fill='%23142a5f'/><g stroke='%23f59e0b' stroke-width='3' stroke-linecap='round' fill='none'><line x1='32' y1='8' x2='32' y2='14'/><line x1='16' y1='14' x2='20' y2='18'/><line x1='48' y1='14' x2='44' y2='18'/></g><path d='M32 16c-7 0-12 5-12 11 0 4 2 7 5 9v3c0 1 1 2 2 2h10c1 0 2-1 2-2v-3c3-2 5-5 5-9 0-6-5-11-12-11z' fill='%23f59e0b'/><rect x='27' y='44' width='10' height='3' rx='1' fill='%23f59e0b'/><rect x='28' y='49' width='8' height='2' rx='1' fill='%23f59e0b'/></svg>"/>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 <style>
 :root{color-scheme:light;--bg:#f4f6fb;--panel:#fff;--border:#dde3ee;--border-soft:#eaeef5;--text:#0f172a;--text-2:#475569;--text-3:#7c869a;--accent:#142a5f;--accent-soft:#e2e8f4;--accent-2:#1e40af;--brand-amber:#f59e0b;--green:#10b981;--green-soft:#d1fae5;--amber:#f59e0b;--amber-soft:#fef3c7;--red:#ef4444;--red-soft:#fee2e2;--blue:#3b82f6;--blue-soft:#dbeafe;--purple:#8b5cf6;--purple-soft:#ede9fe;--pink:#ec4899;--pink-soft:#fce7f3;--gray-soft:#f1f4f9;--shadow-sm:0 1px 2px rgba(15,23,42,.05);--radius:14px}
 *{box-sizing:border-box}html,body{margin:0;padding:0}
@@ -149,6 +150,48 @@ table.tbl tr:hover td{background:#fafbfc}
 .cal-more{font-size:10px;color:var(--text-3);padding:0 6px;cursor:pointer}
 .cal-more:hover{color:var(--accent)}
 @media(max-width:880px){.cal-cell{min-height:62px;padding:3px}.cal-task{font-size:9.5px;padding:2px 4px}.cal-head{padding:6px 2px;font-size:9.5px}}
+
+/* Quotation split-pane viewer ────────────────────────────────────────────── */
+.qt-split{display:flex;gap:0;background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;height:calc(100vh - 220px);min-height:520px}
+.qt-pane-left{flex:0 0 320px;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:#fafbfc;border-right:1px solid var(--border)}
+.qt-pane-left.collapsed{flex-basis:0!important}
+.qt-resizer{flex:0 0 6px;background:var(--border-soft);cursor:col-resize;position:relative;transition:background .15s}
+.qt-resizer:hover,.qt-resizer.dragging{background:var(--accent)}
+.qt-resizer::after{content:'';position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:2px;height:30px;background:var(--text-3);border-radius:2px;opacity:.4}
+.qt-pane-right{flex:1;min-width:0;display:flex;flex-direction:column;overflow:hidden;background:#f1f3f6}
+.qt-list-head{padding:12px 14px;border-bottom:1px solid var(--border);background:#fff;display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;color:var(--text-2)}
+.qt-collapse-btn{margin-left:auto;background:transparent;border:1px solid var(--border);border-radius:6px;padding:3px 7px;font-size:11px;cursor:pointer;color:var(--text-2)}
+.qt-collapse-btn:hover{background:var(--bg);color:var(--text)}
+.qt-list{flex:1;overflow:auto;padding:6px 0}
+.qt-customer{padding:7px 14px 4px;font-size:11px;font-weight:700;color:var(--accent);text-transform:uppercase;letter-spacing:.04em;background:#f1f3f6;border-top:1px solid var(--border-soft);position:sticky;top:0;z-index:1}
+.qt-customer:first-of-type{border-top:0}
+.qt-file{display:flex;align-items:center;gap:8px;padding:8px 14px 8px 24px;cursor:pointer;font-size:12.5px;border-left:3px solid transparent;transition:background .12s,border-color .12s}
+.qt-file:hover{background:#fff}
+.qt-file.active{background:#fff;border-left-color:var(--accent);font-weight:600}
+.qt-file-icon{width:14px;height:14px;flex-shrink:0;color:var(--text-3)}
+.qt-file.kind-pdf .qt-file-icon{color:var(--red)}
+.qt-file.kind-json .qt-file-icon{color:var(--blue)}
+.qt-file-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.qt-file-meta{font-size:10.5px;color:var(--text-3);font-weight:400}
+.qt-preview-head{padding:10px 14px;background:#fff;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-size:12.5px}
+.qt-preview-head strong{font-weight:600}
+.qt-preview-body{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;background:#525659}
+.qt-preview-body iframe{width:100%;height:100%;border:0;background:#fff}
+.qt-preview-empty{color:#cbd5e1;font-size:13px;text-align:center;padding:40px}
+.qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
+.qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
+.qt-bridge-status.err{background:#fee2e2;color:var(--red)}
+.qt-line-row{display:grid;grid-template-columns:36px 88px 1fr 70px 90px 110px 100px 30px;gap:6px;align-items:start;padding:6px 0;border-bottom:1px dashed var(--border-soft)}
+.qt-line-row.header{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-3);letter-spacing:.04em;border-bottom:1.5px solid var(--border)}
+.qt-line-row textarea{min-height:42px;resize:vertical;font-family:inherit;font-size:12.5px;padding:6px 8px}
+.qt-line-row input{font-size:12.5px;padding:6px 8px}
+.qt-line-row .qt-line-amt{align-self:center;text-align:right;font-weight:600;color:var(--text)}
+.qt-line-row .qt-line-del{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;align-self:center}
+.qt-line-photo{width:78px;height:78px;border:1.5px dashed var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--bg);overflow:hidden;font-size:10.5px;color:var(--text-3);text-align:center;line-height:1.25}
+.qt-line-photo img{width:100%;height:100%;object-fit:cover}
+.qt-doc-types{display:flex;gap:6px;flex-wrap:wrap}
+.qt-doc-types .chip{cursor:pointer}
+@media(max-width:880px){.qt-split{flex-direction:column;height:auto}.qt-pane-left{flex-basis:auto!important;max-height:240px;border-right:0;border-bottom:1px solid var(--border)}.qt-resizer{display:none}.qt-line-row{grid-template-columns:1fr 1fr;gap:8px;padding:10px 0}}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:var(--text);color:#fff;padding:10px 18px;border-radius:9px;font-size:13px;font-weight:500;box-shadow:0 8px 24px rgba(0,0,0,.2);opacity:0;pointer-events:none;transition:opacity .2s,transform .2s;z-index:200}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(-6px)}
 @media(max-width:880px){.toast{bottom:80px}}
@@ -183,6 +226,7 @@ body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--g
     <div class="nav-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
     <div class="nav-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Follow-up Tasks</div>
     <div class="nav-item" data-view="schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Schedule</div>
+    <div class="nav-item" data-view="quotations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Quotations</div>
     <div class="nav-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Product Price</div>
     <div class="nav-item admin-only" data-view="statement"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><line x1="10" y1="9" x2="8" y2="9"/></svg>Financial Statement</div>
     <div class="nav-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
@@ -204,6 +248,7 @@ body.admin-unlocked .admin-lock-badge{background:var(--green-soft);color:var(--g
   <div class="tab-item admin-only" data-view="dashboard"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="9"/><rect x="14" y="3" width="7" height="5"/><rect x="14" y="12" width="7" height="9"/><rect x="3" y="16" width="7" height="5"/></svg>Dashboard</div>
   <div class="tab-item" data-view="tasks"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>Tasks</div>
   <div class="tab-item" data-view="schedule"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Schedule</div>
+  <div class="tab-item" data-view="quotations"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Quotes</div>
   <div class="tab-item admin-only" data-view="prices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>Prices</div>
   <div class="tab-item" data-view="delivery"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="3" width="15" height="13"/><polygon points="16 8 20 8 23 11 23 16 16 16 16 8"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></svg>Delivery</div>
   <div class="tab-item" data-view="admin"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>Admin</div>
@@ -233,6 +278,8 @@ let TASKS     = [];
 let PRICES    = [];
 let DLV       = [];
 let STATEMENT = []; // dashboard summary rows from the `statement` Supabase view
+let QUOTATIONS = []; // local quotation records, hydrated from the bridge on view load
+let QUOTATION_FILES = []; // [{name, files:[{path,name,size,mtime,type}]}] from bridge /api/list
 
 async function loadAll() {
   if (USE_SUPABASE) {
@@ -529,6 +576,8 @@ function setView(v) {
   document.querySelectorAll('.tab-item').forEach(el => el.classList.toggle('active', el.dataset.view === v));
   Object.values(charts).forEach(c => c && c.destroy && c.destroy()); charts = {};
   render();
+  // When entering Quotations, kick off a bridge refresh and re-render with the file tree
+  if (v === 'quotations') qtRefreshFiles().then(() => { if (currentView === 'quotations') render(); });
 }
 function showPinGate() {
   document.getElementById('page-title').textContent = 'Admin Access';
@@ -572,17 +621,18 @@ function bindNav() {
 function render() {
   const doneCount = STATEMENT.filter(r => r.status === 'Done').length;
   const scheduledCount = TASKS.filter(t => t.status !== 'Invoice' && t.status !== 'Invoices' && t.status !== 'Done' && (t.dueDate || t.deadline)).length;
-  const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], schedule:["Follow-up Schedule", `${scheduledCount} tasks with due/deadline dates`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
+  const titles = { dashboard:["Dashboard","Tuesday, April 28, 2026"], tasks:["Follow-up Tasks", `${TASKS.length} items`], schedule:["Follow-up Schedule", `${scheduledCount} tasks with due/deadline dates`], quotations:["Quotations", `${QUOTATIONS.length} record${QUOTATIONS.length===1?'':'s'} · ${quotationFileCount()} file${quotationFileCount()===1?'':'s'} on disk`], prices:["Product Price", `${PRICES.filter(p=>p.status!=='Done').length} active items`], statement:["Financial Statement", `${doneCount} completed jobs`], delivery:["Delivery", `${DLV.length} active shipments`], customers:["Customers", `${CUSTOMERS.length} accounts`], team:["Team", `${TEAM.length} PIC`] };
   document.getElementById('page-title').textContent = titles[currentView][0];
   document.getElementById('page-sub').textContent  = titles[currentView][1];
   const addBtn = document.getElementById('header-add-btn');
-  addBtn.style.display = (currentView==='tasks'||currentView==='prices'||currentView==='delivery') ? '' : 'none';
-  const lbl = currentView==='prices'?'New Price':currentView==='delivery'?'New Shipment':'New Task';
+  addBtn.style.display = (currentView==='tasks'||currentView==='prices'||currentView==='delivery'||currentView==='quotations') ? '' : 'none';
+  const lbl = currentView==='prices'?'New Price':currentView==='delivery'?'New Shipment':currentView==='quotations'?'New Quotation':'New Task';
   addBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>'+lbl;
-  addBtn.onclick = () => currentView==='prices' ? openPriceModal() : currentView==='delivery' ? openDeliveryModal() : openTaskModal();
+  addBtn.onclick = () => currentView==='prices' ? openPriceModal() : currentView==='delivery' ? openDeliveryModal() : currentView==='quotations' ? openQuotationModal() : openTaskModal();
   if (currentView==="dashboard") renderDashboard();
   if (currentView==="tasks")     renderTasks();
   if (currentView==="schedule")  renderSchedule();
+  if (currentView==="quotations") renderQuotations();
   if (currentView==="prices")    renderPrices();
   if (currentView==="statement") renderStatement();
   if (currentView==="delivery")  renderDelivery();
@@ -1588,6 +1638,610 @@ function renderCustomers() {
 function renderTeam() {
   const stats = TEAM.map(p => { const tasks = TASKS.filter(t => t.pic===p); return { name:p, tasks:tasks.length, open:tasks.filter(t=>t.status!=='Done').length, done:tasks.filter(t=>t.status==='Done').length }; });
   document.getElementById('content').innerHTML = `<div class="panel"><div class="panel-head"><div class="panel-title">Team</div><div class="panel-sub">${TEAM.length} PIC members</div></div><div class="panel-body tight"><div class="tbl-wrap"><table class="tbl"><thead><tr><th>Name</th><th>Open</th><th>Done</th><th>Total</th></tr></thead><tbody>${stats.map(s=>`<tr><td><div class="cust-cell"><div class="thumb" style="background:linear-gradient(135deg,#fce7f3,#ede9fe);color:var(--purple);">${initials(s.name)}</div><div class="cust-name">${s.name}</div></div></td><td>${s.open}</td><td>${s.done}</td><td>${s.tasks}</td></tr>`).join('')}</tbody></table></div></div></div>`;
+}
+
+/* ─── Quotations ──────────────────────────────────────────────────────────
+   Single-record-per-deal model: Quotation → Invoice → Delivery Note → Receipt
+   all generate from the same JSON record. PDFs are written to the local
+   bridge (which writes to the synced Synology Drive folder).
+*/
+const QT_BRIDGE = 'http://127.0.0.1:7860';
+const QT_DOC_TYPES = ['Quotation','Invoice','Delivery Note','Receipt'];
+const QT_BANKS = [
+  { name:'BCEL',   acc:'0101100083435' },
+  { name:'LDB',    acc:'0302000010004440' },
+  { name:'IB',     acc:'0100001622889' },
+  { name:'ACLEDA', acc:'049246140001' },
+  { name:'BIC',    acc:'02000000001689' },
+  { name:'MJBL',   acc:'800010100006288' },
+  { name:'APB',    acc:'29799510' },
+];
+const QT_TERMS = {
+  'Quotation': [
+    '* Production time: 20-25 days after design approval',
+    '* Free delivery within Vientiane Capital',
+    '* Free creative design if you choose us for this project',
+    '* This quotation is valid for 15 days',
+    '* Prices include VAT unless otherwise stated',
+  ],
+  'Invoice': [
+    '* Payment due within 30 days of invoice date',
+    '* Late payment may incur 1.5% monthly interest',
+    '* Account Name: Bright Production and Printing',
+  ],
+  'Delivery Note': [
+    '* Please check all items upon receipt',
+    '* Report any damage within 24 hours',
+    '* Signature confirms items received in good condition',
+  ],
+  'Receipt': [
+    '* Payment received with thanks',
+    '* Account Name: Bright Production and Printing',
+  ],
+};
+
+let qtBridgeOk = false;
+let qtPaneCollapsed = false;
+let qtSelectedFile = null; // {customer, file} for preview
+
+function quotationFileCount() {
+  return QUOTATION_FILES.reduce((n, c) => n + c.files.length, 0);
+}
+
+// Talk to the local bridge. Returns null + sets qtBridgeOk=false on connection failure.
+async function qtFetch(path, opts = {}) {
+  try {
+    const r = await fetch(QT_BRIDGE + path, opts);
+    qtBridgeOk = true;
+    if (!r.ok) throw new Error(await r.text());
+    const ct = r.headers.get('content-type') || '';
+    return ct.includes('json') ? r.json() : r.text();
+  } catch (e) {
+    qtBridgeOk = false;
+    return null;
+  }
+}
+
+async function qtRefreshFiles() {
+  const data = await qtFetch('/api/list');
+  QUOTATION_FILES = data?.customers || [];
+  return data;
+}
+
+function renderQuotations() {
+  // Group records by customer for the "records" header line
+  const byCust = {};
+  QUOTATIONS.forEach(q => { (byCust[q.customer || 'Unassigned'] = byCust[q.customer || 'Unassigned'] || []).push(q); });
+  const recordRows = QUOTATIONS.slice().sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
+    <tr onclick="openQuotationModal('${q.id}')" style="cursor:pointer;">
+      <td><strong>${q.docNo || '—'}</strong></td>
+      <td>${q.customer || '—'}</td>
+      <td>${q.project || '—'}</td>
+      <td>${q.date || '—'}</td>
+      <td style="text-align:right;">${qtFmtAmount(qtTotals(q).grand, q.currency)}</td>
+      <td>${(q.generated||[]).map(g => `<span class="badge" style="background:var(--accent-soft);color:var(--accent);font-size:10px;">${g}</span>`).join(' ') || '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>'}</td>
+    </tr>
+  `).join('');
+
+  const fileTreeHtml = QUOTATION_FILES.length === 0
+    ? `<div class="qt-preview-empty" style="color:var(--text-3);">${qtBridgeOk===false?'<strong>Bridge offline.</strong><br>Start the bridge then click Refresh.':'No files yet — generate a PDF to see it here.'}</div>`
+    : QUOTATION_FILES.map(c => `
+        <div class="qt-customer">${c.name}</div>
+        ${c.files.map(f => `
+          <div class="qt-file kind-${f.type} ${qtSelectedFile && qtSelectedFile.path===f.path ? 'active':''}"
+               onclick="qtSelectFile('${f.path.replace(/'/g,"\\'")}', '${f.type}')">
+            <svg class="qt-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+            </svg>
+            <div style="flex:1;min-width:0;overflow:hidden;">
+              <div class="qt-file-name">${f.name}</div>
+              <div class="qt-file-meta">${qtFmtBytes(f.size)} · ${new Date(f.mtime).toLocaleDateString()}</div>
+            </div>
+          </div>`).join('')}
+      `).join('');
+
+  const previewHtml = qtSelectedFile
+    ? (qtSelectedFile.type === 'pdf'
+        ? `<iframe src="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}#toolbar=1"></iframe>`
+        : `<div style="background:#fff;padding:24px;width:100%;height:100%;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;white-space:pre;" id="qt-json-view">Loading…</div>`)
+    : `<div class="qt-preview-empty">Pick a file on the left to preview it here.<br><span style="font-size:11.5px;color:#94a3b8;">(PDF renders inline · JSON shows raw data)</span></div>`;
+
+  const bridgeStatus = qtBridgeOk
+    ? '<span class="qt-bridge-status ok">● Bridge connected</span>'
+    : '<span class="qt-bridge-status err">● Bridge offline</span>';
+
+  document.getElementById('content').innerHTML = `
+    <div class="panel" style="margin-bottom:14px;">
+      <div class="panel-head">
+        <div><div class="panel-title">Saved files on Synology Drive</div><div class="panel-sub">/SynologyDrive-team/Quotation/&lt;customer&gt;/ &nbsp;${bridgeStatus}</div></div>
+        <div class="filter-bar">
+          <button class="btn" onclick="qtToggleCollapse()">${qtPaneCollapsed?'▶ Expand':'◀ Collapse'} list</button>
+          <button class="btn" onclick="qtReloadFiles()">↻ Refresh</button>
+        </div>
+      </div>
+      <div class="qt-split" id="qt-split">
+        <div class="qt-pane-left ${qtPaneCollapsed?'collapsed':''}" id="qt-pane-left">
+          <div class="qt-list-head">Files (${quotationFileCount()})</div>
+          <div class="qt-list">${fileTreeHtml}</div>
+        </div>
+        <div class="qt-resizer" id="qt-resizer" title="Drag to resize"></div>
+        <div class="qt-pane-right">
+          <div class="qt-preview-head">${qtSelectedFile ? `<strong>${qtSelectedFile.path}</strong>` : 'Preview'}</div>
+          <div class="qt-preview-body">${previewHtml}</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} in memory · click a row to edit</div></div></div>
+      <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
+        <thead><tr><th>Doc No.</th><th>Customer</th><th>Project</th><th>Date</th><th style="text-align:right;">Grand Total</th><th>Generated</th></tr></thead>
+        <tbody>${recordRows || '<tr><td colspan="6" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
+      </table></div></div>
+    </div>
+  `;
+
+  qtBindResizer();
+  if (qtSelectedFile && qtSelectedFile.type === 'json') qtLoadJsonPreview();
+}
+
+// ── Bridge file actions ────────────────────────────────────────────────────
+async function qtReloadFiles() {
+  showToast('Refreshing…');
+  await qtRefreshFiles();
+  if (currentView === 'quotations') render();
+}
+async function qtSelectFile(p, type) {
+  qtSelectedFile = { path: p, type };
+  if (currentView === 'quotations') render();
+}
+async function qtLoadJsonPreview() {
+  const el = document.getElementById('qt-json-view');
+  if (!el || !qtSelectedFile) return;
+  try {
+    const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path));
+    el.textContent = JSON.stringify(await r.json(), null, 2);
+  } catch (e) { el.textContent = 'Error: ' + e.message; }
+}
+function qtToggleCollapse() { qtPaneCollapsed = !qtPaneCollapsed; render(); }
+
+// Drag the resizer to change the file-list pane width. The new width persists
+// in localStorage so a session-to-session resize feels stable.
+function qtBindResizer() {
+  const r = document.getElementById('qt-resizer');
+  const left = document.getElementById('qt-pane-left');
+  const split = document.getElementById('qt-split');
+  if (!r || !left || !split) return;
+  const saved = parseInt(localStorage.getItem('qt-pane-width') || '320', 10);
+  if (!qtPaneCollapsed) left.style.flexBasis = saved + 'px';
+  let dragging = false;
+  r.addEventListener('mousedown', e => {
+    if (qtPaneCollapsed) return;
+    dragging = true; r.classList.add('dragging');
+    document.body.style.userSelect = 'none'; document.body.style.cursor = 'col-resize';
+    e.preventDefault();
+  });
+  document.addEventListener('mousemove', e => {
+    if (!dragging) return;
+    const splitRect = split.getBoundingClientRect();
+    const w = Math.max(140, Math.min(splitRect.width * 0.7, e.clientX - splitRect.left));
+    left.style.flexBasis = w + 'px';
+  });
+  document.addEventListener('mouseup', () => {
+    if (!dragging) return;
+    dragging = false; r.classList.remove('dragging');
+    document.body.style.userSelect = ''; document.body.style.cursor = '';
+    localStorage.setItem('qt-pane-width', parseInt(left.style.flexBasis, 10) || 320);
+  });
+}
+
+// ── Quotation form modal ───────────────────────────────────────────────────
+function blankLine() { return { description:'', qty:1, unit:'pcs', unitPrice:0, photoData:'' }; }
+
+function openQuotationModal(id) {
+  const isEdit = !!id;
+  const q = isEdit ? JSON.parse(JSON.stringify(QUOTATIONS.find(x => x.id === id))) : {
+    id: 'qt_' + Date.now().toString(36),
+    docType: 'Quotation',
+    docNo: 'BR-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*900+100),
+    customer: '', address: '', officeNumber: '', contactPerson: '', contactNumber: '', email: '',
+    project: '',
+    date: todayISO(), validUntil: '',
+    currency: 'LAK', vatRate: 10,
+    items: [blankLine()],
+    bankName: 'BCEL', accountNo: '0101100083435', accountName: 'Bright Production and Printing',
+    notes: '',
+    generated: [], // ['Quotation','Invoice'...] tracks which PDFs have been written
+    updatedAt: Date.now(),
+  };
+  document.getElementById('modal-title').textContent = isEdit ? `Edit · ${q.docNo}` : 'New Quotation';
+  document.getElementById('modal-body').innerHTML = `
+    <div class="field-row">
+      <div class="field"><label>Doc No.</label><input id="q-no" value="${q.docNo}" /></div>
+      <div class="field"><label>Project</label><input id="q-proj" value="${(q.project||'').replace(/"/g,'&quot;')}" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Customer</label>
+        <div class="ac-wrap"><input id="q-cust" value="${(q.customer||'').replace(/"/g,'&quot;')}" placeholder="Click or type to search/add…" autocomplete="off" /></div>
+      </div>
+      <div class="field"><label>Contact Person</label><input id="q-contact" value="${(q.contactPerson||'').replace(/"/g,'&quot;')}" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Address</label><input id="q-addr" value="${(q.address||'').replace(/"/g,'&quot;')}" /></div>
+      <div class="field"><label>Office Number</label><input id="q-office" value="${q.officeNumber||''}" /></div>
+    </div>
+    <div class="field-row">
+      <div class="field"><label>Contact Number</label><input id="q-phone" value="${q.contactNumber||''}" /></div>
+      <div class="field"><label>Email</label><input id="q-email" value="${q.email||''}" /></div>
+    </div>
+    <div class="field-row-3">
+      <div class="field"><label>Date</label><input id="q-date" type="date" value="${q.date||''}" /></div>
+      <div class="field"><label>Valid Until</label><input id="q-valid" type="date" value="${q.validUntil||''}" /></div>
+      <div class="field"><label>Currency</label>
+        <select id="q-curr">${['LAK','USD','THB'].map(c => `<option ${c===q.currency?'selected':''}>${c}</option>`).join('')}</select>
+      </div>
+    </div>
+    <div class="field-row-3">
+      <div class="field"><label>VAT Rate (%)</label><input id="q-vat" type="number" step="0.5" value="${q.vatRate}" oninput="qtRefreshTotals()" /></div>
+      <div class="field"><label>Bank</label>
+        <select id="q-bank" onchange="qtBankPicked()">${QT_BANKS.map(b => `<option value="${b.name}" data-acc="${b.acc}" ${b.name===q.bankName?'selected':''}>${b.name}</option>`).join('')}</select>
+      </div>
+      <div class="field"><label>Account No.</label><input id="q-acc" value="${q.accountNo}" /></div>
+    </div>
+
+    <div style="margin:14px 0 6px;display:flex;align-items:center;gap:10px;">
+      <strong style="font-size:13.5px;">Line Items</strong>
+      <span style="color:var(--text-3);font-size:11.5px;">Photos & multi-line descriptions supported</span>
+      <button class="btn btn-sm" style="margin-left:auto;" onclick="qtAddLine()">+ Add Line</button>
+    </div>
+    <div id="q-lines">
+      <div class="qt-line-row header"><div>#</div><div>Photo</div><div>Description</div><div>Qty</div><div>Unit</div><div>Unit Price</div><div style="text-align:right;">Amount</div><div></div></div>
+      <div id="q-lines-body"></div>
+    </div>
+
+    <div style="margin-top:14px;display:flex;justify-content:flex-end;">
+      <div style="min-width:280px;font-size:13px;line-height:1.9;">
+        <div style="display:flex;justify-content:space-between;"><span>Subtotal:</span><strong id="q-sub">0</strong></div>
+        <div style="display:flex;justify-content:space-between;"><span>VAT (<span id="q-vat-pct">10</span>%):</span><strong id="q-vat-amt">0</strong></div>
+        <div style="display:flex;justify-content:space-between;border-top:1.5px solid var(--text);margin-top:4px;padding-top:6px;font-size:15px;color:var(--accent);"><span>Grand Total:</span><strong id="q-grand">0</strong></div>
+      </div>
+    </div>
+
+    <div class="field" style="margin-top:14px;"><label>Notes (optional)</label><textarea id="q-notes" rows="2" style="font-family:inherit;font-size:13px;padding:8px;width:100%;border:1px solid var(--border);border-radius:8px;">${q.notes||''}</textarea></div>
+
+    <div class="note-box" style="margin-top:14px;"><strong>Document type for PDF:</strong>
+      <div class="qt-doc-types" style="margin-top:6px;">
+        ${QT_DOC_TYPES.map(d => `<span class="chip ${d===q.docType?'active':''}" onclick="qtPickDocType(this,'${d}')">${d}</span>`).join('')}
+      </div>
+      <div style="margin-top:8px;font-size:11.5px;color:var(--text-3);">Save the record first, then generate any of the 4 PDFs from the same data.</div>
+    </div>
+  `;
+  document.getElementById('modal-foot').innerHTML = `
+    ${isEdit ? `<button class="btn" style="color:var(--red);border-color:var(--red);" onclick="qtDeleteRecord('${q.id}')">Delete</button>` : ''}
+    <div style="flex:1"></div>
+    <button class="btn" onclick="closeModal()">Cancel</button>
+    <button class="btn" onclick="qtSaveRecord('${q.id}',${isEdit},false)">Save Record</button>
+    <button class="btn btn-primary" onclick="qtSaveRecord('${q.id}',${isEdit},true)">💾 Save + Generate PDF</button>
+  `;
+  // Stash the working copy on the modal so add/remove/photo handlers can mutate it
+  const m = document.getElementById('modal');
+  m.dataset.qtRecord = JSON.stringify(q);
+  document.getElementById('modal-bg').classList.add('show');
+  setTimeout(() => {
+    qtRenderLines();
+    qtRefreshTotals();
+    setupAutocomplete(document.getElementById('q-cust'), () => CUSTOMERS);
+  }, 30);
+}
+
+function qtCurrentRecord() {
+  return JSON.parse(document.getElementById('modal').dataset.qtRecord);
+}
+function qtSetCurrentRecord(q) {
+  document.getElementById('modal').dataset.qtRecord = JSON.stringify(q);
+}
+
+function qtPickDocType(el, d) {
+  el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+  const q = qtCurrentRecord(); q.docType = d; qtSetCurrentRecord(q);
+}
+function qtBankPicked() {
+  const sel = document.getElementById('q-bank');
+  const acc = sel.options[sel.selectedIndex]?.dataset.acc || '';
+  document.getElementById('q-acc').value = acc;
+}
+function qtAddLine() {
+  const q = qtCurrentRecord(); q.items.push(blankLine()); qtSetCurrentRecord(q);
+  qtRenderLines(); qtRefreshTotals();
+}
+function qtRemoveLine(i) {
+  const q = qtCurrentRecord();
+  if (q.items.length <= 1) { showToast('Need at least one line'); return; }
+  q.items.splice(i, 1); qtSetCurrentRecord(q);
+  qtRenderLines(); qtRefreshTotals();
+}
+function qtUpdateLine(i, field, val) {
+  const q = qtCurrentRecord();
+  q.items[i][field] = (field === 'qty' || field === 'unitPrice') ? (parseFloat(val) || 0) : val;
+  qtSetCurrentRecord(q);
+  if (field === 'qty' || field === 'unitPrice') qtRefreshTotals();
+}
+function qtPickLinePhoto(i) {
+  const inp = document.createElement('input');
+  inp.type = 'file'; inp.accept = 'image/*';
+  inp.onchange = () => {
+    const f = inp.files[0]; if (!f) return;
+    const r = new FileReader();
+    r.onload = () => {
+      const q = qtCurrentRecord();
+      q.items[i].photoData = r.result;
+      qtSetCurrentRecord(q);
+      qtRenderLines();
+    };
+    r.readAsDataURL(f);
+  };
+  inp.click();
+}
+function qtRenderLines() {
+  const q = qtCurrentRecord();
+  document.getElementById('q-lines-body').innerHTML = q.items.map((it, i) => `
+    <div class="qt-line-row">
+      <div style="align-self:center;color:var(--text-3);font-weight:600;">${i+1}</div>
+      <div class="qt-line-photo" onclick="qtPickLinePhoto(${i})" title="Click to ${it.photoData?'replace':'add'} photo">
+        ${it.photoData ? `<img src="${it.photoData}">` : 'Click to<br>add photo'}
+      </div>
+      <textarea oninput="qtUpdateLine(${i},'description',this.value)" placeholder="Item description (multi-line OK)…">${(it.description||'').replace(/</g,'&lt;')}</textarea>
+      <input type="number" step="any" value="${it.qty}" oninput="qtUpdateLine(${i},'qty',this.value)" />
+      <input value="${(it.unit||'').replace(/"/g,'&quot;')}" oninput="qtUpdateLine(${i},'unit',this.value)" placeholder="pcs" />
+      <input type="number" step="any" value="${it.unitPrice}" oninput="qtUpdateLine(${i},'unitPrice',this.value)" />
+      <div class="qt-line-amt" id="q-amt-${i}">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</div>
+      <button class="qt-line-del" onclick="qtRemoveLine(${i})" title="Remove line">×</button>
+    </div>
+  `).join('');
+}
+function qtTotals(q) {
+  const sub = q.items.reduce((n, it) => n + (+it.qty||0) * (+it.unitPrice||0), 0);
+  const vat = sub * (+q.vatRate || 0) / 100;
+  return { sub, vat, grand: sub + vat };
+}
+function qtRefreshTotals() {
+  const q = qtCurrentRecord();
+  q.vatRate = +document.getElementById('q-vat').value || 0;
+  qtSetCurrentRecord(q);
+  const t = qtTotals(q), curr = document.getElementById('q-curr').value;
+  q.items.forEach((it, i) => {
+    const el = document.getElementById('q-amt-' + i);
+    if (el) el.textContent = qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), curr);
+  });
+  document.getElementById('q-sub').textContent     = qtFmtAmount(t.sub, curr);
+  document.getElementById('q-vat-amt').textContent = qtFmtAmount(t.vat, curr);
+  document.getElementById('q-grand').textContent   = qtFmtAmount(t.grand, curr);
+  document.getElementById('q-vat-pct').textContent = q.vatRate;
+}
+function qtFmtAmount(n, curr) {
+  const v = (+n || 0).toLocaleString('en-US', { maximumFractionDigits: curr === 'LAK' ? 0 : 2 });
+  return v + ' ' + (curr || '');
+}
+function qtFmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1048576) return (n/1024).toFixed(1) + ' KB';
+  return (n/1048576).toFixed(1) + ' MB';
+}
+
+// Read all form values back into the working record before save / PDF
+function qtReadFormIntoRecord() {
+  const q = qtCurrentRecord();
+  q.docNo         = document.getElementById('q-no').value.trim();
+  q.project       = document.getElementById('q-proj').value.trim();
+  q.customer      = document.getElementById('q-cust').value.trim();
+  q.contactPerson = document.getElementById('q-contact').value.trim();
+  q.address       = document.getElementById('q-addr').value.trim();
+  q.officeNumber  = document.getElementById('q-office').value.trim();
+  q.contactNumber = document.getElementById('q-phone').value.trim();
+  q.email         = document.getElementById('q-email').value.trim();
+  q.date          = document.getElementById('q-date').value;
+  q.validUntil    = document.getElementById('q-valid').value;
+  q.currency      = document.getElementById('q-curr').value;
+  q.vatRate       = +document.getElementById('q-vat').value || 0;
+  q.bankName      = document.getElementById('q-bank').value;
+  q.accountNo     = document.getElementById('q-acc').value.trim();
+  q.notes         = document.getElementById('q-notes').value;
+  q.updatedAt     = Date.now();
+  qtSetCurrentRecord(q);
+  return q;
+}
+
+async function qtSaveRecord(id, isEdit, generatePdf) {
+  const q = qtReadFormIntoRecord();
+  if (!q.customer) { showToast('Customer is required'); return; }
+  if (!q.docNo)    { showToast('Doc No. is required'); return; }
+
+  // Persist in-memory record
+  if (isEdit) {
+    const idx = QUOTATIONS.findIndex(x => x.id === id);
+    if (idx >= 0) QUOTATIONS[idx] = q;
+  } else {
+    QUOTATIONS.push(q);
+  }
+
+  // Always write the JSON record alongside the PDFs so we can reload + edit later
+  const safeCust = qtSafeFolder(q.customer);
+  const recordPath = `${safeCust}/${q.docNo}_record.json`;
+  await qtFetch('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: recordPath, contentText: JSON.stringify(q, null, 2) }),
+  });
+
+  if (generatePdf) {
+    await qtGeneratePdf(q);
+  }
+
+  await qtRefreshFiles();
+  closeModal();
+  showToast(generatePdf ? `${q.docType} PDF saved to Synology Drive` : 'Record saved');
+  if (currentView === 'quotations') render();
+}
+
+async function qtDeleteRecord(id) {
+  if (!confirm('Delete this quotation record? PDFs already on disk are kept.')) return;
+  QUOTATIONS = QUOTATIONS.filter(x => x.id !== id);
+  closeModal();
+  if (currentView === 'quotations') render();
+}
+
+// Strip slashes/control chars so a customer name is safe as a folder name
+function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim() || 'Unassigned'; }
+
+// ── PDF generator ──────────────────────────────────────────────────────────
+// Renders a fresh HTML doc in a hidden container, runs html2pdf to produce a Blob,
+// then ships the bytes to the bridge so it lands in the Synology Drive folder.
+async function qtGeneratePdf(q) {
+  const html = qtBuildDocHtml(q);
+  const holder = document.createElement('div');
+  holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;background:#fff;';
+  holder.innerHTML = html;
+  document.body.appendChild(holder);
+  try {
+    const blob = await html2pdf().set({
+      margin: [10, 10, 12, 10],
+      filename: 'doc.pdf',
+      image: { type: 'jpeg', quality: 0.92 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
+    }).from(holder.firstElementChild).outputPdf('blob');
+    const b64 = await blobToBase64(blob);
+    const safeCust = qtSafeFolder(q.customer);
+    const safeDoc  = q.docType.replace(/\s+/g,'');
+    const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
+    const result = await qtFetch('/api/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path: `${safeCust}/${filename}`, contentBase64: b64 }),
+    });
+    if (result?.ok) {
+      if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+    } else {
+      showToast('Bridge offline — PDF could not be saved');
+    }
+  } finally {
+    document.body.removeChild(holder);
+  }
+}
+
+function blobToBase64(blob) {
+  return new Promise((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result.split(',')[1]); // strip "data:...;base64,"
+    r.onerror = reject;
+    r.readAsDataURL(blob);
+  });
+}
+
+// Build the printable HTML for the chosen doc type. Mirrors the Excel template:
+// company header + doc-type title, customer block, project line, line-items table,
+// totals box, payment + T&C blocks, signature lines.
+function qtBuildDocHtml(q) {
+  const t = qtTotals(q);
+  const esc = s => (s ?? '').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  const niceDate = s => s ? parseLocalDate(s).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '';
+  const lines = q.items.map((it, i) => `
+    <tr>
+      <td style="text-align:center;">${i+1}</td>
+      <td style="text-align:center;width:80px;">${it.photoData ? `<img src="${it.photoData}" style="max-width:70px;max-height:70px;object-fit:contain;">` : ''}</td>
+      <td style="white-space:pre-wrap;">${esc(it.description)}</td>
+      <td style="text-align:center;">${it.qty}</td>
+      <td style="text-align:center;">${esc(it.unit)}</td>
+      <td style="text-align:right;">${qtFmtAmount(it.unitPrice, q.currency)}</td>
+      <td style="text-align:right;">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</td>
+    </tr>
+  `).join('');
+
+  const termsHeading = { 'Quotation':'Terms and Conditions:', 'Invoice':'Payment Details:', 'Delivery Note':'Delivery Information:', 'Receipt':'Receipt Notes:' }[q.docType];
+  const termsBody    = QT_TERMS[q.docType].map(line => `<div>${esc(line)}</div>`).join('');
+  const sigLeft  = { 'Quotation':'Prepared by', 'Invoice':'Issued by',     'Delivery Note':'Delivered by',  'Receipt':'Received by' }[q.docType];
+  const sigRight = { 'Quotation':'Approved by', 'Invoice':'Customer Sign', 'Delivery Note':'Customer Sign', 'Receipt':'Customer Sign' }[q.docType];
+
+  return `
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:20px 24px;font-size:11px;line-height:1.4;background:#fff;">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #142a5f;padding-bottom:10px;margin-bottom:14px;">
+        <div>
+          <div style="font-size:18px;font-weight:800;color:#142a5f;letter-spacing:.02em;">BRIGHT PRODUCTION &amp; PRINTING</div>
+          <div style="font-size:9.5px;color:#475569;margin-top:3px;">Thongpong Village, Sikhodtabong District, Vientiane Lao PDR</div>
+          <div style="font-size:9.5px;color:#475569;">Tel: 020 555 97 992 &nbsp;·&nbsp; Email: info@brightprinting.la</div>
+        </div>
+        <div style="text-align:right;">
+          <div style="font-size:22px;font-weight:800;color:#f59e0b;text-transform:uppercase;letter-spacing:.04em;">${q.docType}</div>
+          <div style="font-size:10px;color:#475569;margin-top:6px;"><strong>Doc No.:</strong> ${esc(q.docNo)}</div>
+          <div style="font-size:10px;color:#475569;"><strong>Date:</strong> ${niceDate(q.date)}</div>
+          ${q.validUntil ? `<div style="font-size:10px;color:#475569;"><strong>Valid Until:</strong> ${niceDate(q.validUntil)}</div>` : ''}
+          <div style="font-size:10px;color:#475569;"><strong>Currency:</strong> ${esc(q.currency)}</div>
+        </div>
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:10px;font-size:10.5px;">
+        <tr>
+          <td style="padding:3px 0;width:120px;color:#64748b;">Attention to:</td><td style="padding:3px 0;font-weight:600;">${esc(q.customer)}</td>
+          <td style="padding:3px 0;width:120px;color:#64748b;">Contact Person:</td><td style="padding:3px 0;">${esc(q.contactPerson)}</td>
+        </tr>
+        <tr>
+          <td style="padding:3px 0;color:#64748b;">Address:</td><td style="padding:3px 0;">${esc(q.address)}</td>
+          <td style="padding:3px 0;color:#64748b;">Contact Number:</td><td style="padding:3px 0;">${esc(q.contactNumber)}</td>
+        </tr>
+        <tr>
+          <td style="padding:3px 0;color:#64748b;">Office Number:</td><td style="padding:3px 0;">${esc(q.officeNumber)}</td>
+          <td style="padding:3px 0;color:#64748b;">Email:</td><td style="padding:3px 0;">${esc(q.email)}</td>
+        </tr>
+      </table>
+
+      <div style="background:#f1f5f9;padding:6px 10px;border-radius:5px;margin-bottom:10px;font-size:11px;">
+        <strong style="color:#142a5f;">Project:</strong> ${esc(q.project)}
+      </div>
+
+      <table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:10px;">
+        <thead>
+          <tr style="background:#142a5f;color:#fff;">
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:30px;">No.</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:80px;">Sample</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;text-align:left;">Description</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:40px;">Qty</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:50px;">Unit</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:90px;">Unit Price</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:100px;">Amount</th>
+          </tr>
+        </thead>
+        <tbody style="background:#fff;">${lines.replace(/<td/g,'<td style="border:1px solid #cbd5e1;padding:5px 4px;vertical-align:top;')}</tbody>
+      </table>
+
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <table style="font-size:11px;border-collapse:collapse;min-width:280px;">
+          <tr><td style="padding:4px 12px;color:#64748b;">Subtotal:</td><td style="padding:4px 12px;text-align:right;">${qtFmtAmount(t.sub, q.currency)}</td></tr>
+          <tr><td style="padding:4px 12px;color:#64748b;">VAT (${q.vatRate}%):</td><td style="padding:4px 12px;text-align:right;">${qtFmtAmount(t.vat, q.currency)}</td></tr>
+          <tr style="background:#142a5f;color:#fff;font-weight:700;font-size:12.5px;"><td style="padding:6px 12px;">Grand Total:</td><td style="padding:6px 12px;text-align:right;">${qtFmtAmount(t.grand, q.currency)}</td></tr>
+        </table>
+      </div>
+
+      <div style="display:flex;gap:18px;margin-bottom:18px;font-size:10px;">
+        <div style="flex:1;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:3px;">
+          <div style="font-weight:700;margin-bottom:4px;color:#92400e;">${esc(termsHeading)}</div>
+          ${termsBody}
+        </div>
+        <div style="flex:1;padding:8px 12px;background:#eff6ff;border-left:3px solid #142a5f;border-radius:3px;">
+          <div style="font-weight:700;margin-bottom:4px;color:#142a5f;">Payment Details:</div>
+          <div>* Account Name: Bright Production and Printing</div>
+          <div>* Bank Name: ${esc(q.bankName)}</div>
+          <div>* Account No.: ${esc(q.accountNo)}</div>
+          ${q.notes ? `<div style="margin-top:6px;padding-top:6px;border-top:1px dashed #cbd5e1;">${esc(q.notes)}</div>` : ''}
+        </div>
+      </div>
+
+      <div style="display:flex;gap:30px;margin-top:30px;font-size:10px;">
+        <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigLeft)}</div>
+        <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigRight)}</div>
+      </div>
+    </div>
+  `;
 }
 
 function openTaskModal(id) {
