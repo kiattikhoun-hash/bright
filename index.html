@@ -1716,30 +1716,31 @@ async function qtRefreshFiles() {
   return data;
 }
 
+// Find the saved PDF for a given record + doc type in the QUOTATION_FILES tree.
+// Returns null if the bridge hasn't surfaced it yet (e.g. it was deleted on
+// disk or sync hasn't run). Match is by `<docNo>_<DocTypeNoSpaces>_…` so the
+// date suffix doesn't matter if the user changed q.date after generating.
+function qtFindPdf(q, docType) {
+  const safeCust = qtSafeFolder(q.customer);
+  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const cust = QUOTATION_FILES.find(c => c.name === safeCust);
+  if (!cust) return null;
+  const proj = (cust.projects || []).find(p => p.name === safeProj);
+  if (!proj) return null;
+  const prefix = q.docNo + '_' + docType.replace(/\s+/g,'') + '_';
+  return (proj.files || []).find(f => f.name.startsWith(prefix)) || null;
+}
+
 function renderQuotations() {
   // Group records by customer for the "records" header line
   const byCust = {};
   QUOTATIONS.forEach(q => { (byCust[q.customer || 'Unassigned'] = byCust[q.customer || 'Unassigned'] || []).push(q); });
 
-  // Find the saved PDF for a given record + doc type. Returns null if the
-  // bridge hasn't surfaced it yet (e.g. it was deleted on disk or sync hasn't
-  // run). Match is by `<docNo>_<DocTypeNoSpaces>_…` so the date suffix doesn't
-  // matter if the user changed q.date after generating.
-  const findPdf = (q, docType) => {
-    const safeCust = qtSafeFolder(q.customer);
-    const safeProj = qtSafeFolder(q.project || 'Untitled Project');
-    const cust = QUOTATION_FILES.find(c => c.name === safeCust);
-    if (!cust) return null;
-    const proj = (cust.projects || []).find(p => p.name === safeProj);
-    if (!proj) return null;
-    const prefix = q.docNo + '_' + docType.replace(/\s+/g,'') + '_';
-    return (proj.files || []).find(f => f.name.startsWith(prefix)) || null;
-  };
   const renderBadges = q => {
     const list = q.generated || [];
     if (!list.length) return '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>';
     return list.map(g => {
-      const f = findPdf(q, g);
+      const f = qtFindPdf(q, g);
       if (f) {
         const safePath = f.path.replace(/'/g,"\\'");
         const safeName = f.name.replace(/'/g,"\\'");
@@ -2009,6 +2010,19 @@ function openQuotationModal(id) {
         ${QT_DOC_TYPES.map(d => `<span class="chip ${d===q.docType?'active':''}" onclick="qtPickDocType(this,'${d}')">${d}</span>`).join('')}
       </div>
       <div style="margin-top:8px;font-size:11.5px;color:var(--text-3);">Save the record first, then generate any of the 4 PDFs from the same data.</div>
+      ${(q.generated && q.generated.length) ? `
+        <div style="margin-top:10px;padding-top:10px;border-top:1px dashed var(--border-soft);">
+          <div style="font-size:11.5px;color:var(--text-3);margin-bottom:6px;">Already generated — click to preview:</div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            ${q.generated.map(d => {
+              const f = qtFindPdf(q, d);
+              if (!f) return `<button type="button" class="btn btn-sm" disabled title="File not on disk yet — Refresh files">${d} (missing)</button>`;
+              const sp = f.path.replace(/'/g,"\\'");
+              const sn = f.name.replace(/'/g,"\\'");
+              return `<button type="button" class="btn btn-sm" onclick="closeModal();qtShowInPanel('${sp}','${sn}')">👁 Preview ${d}</button>`;
+            }).join('')}
+          </div>
+        </div>` : ''}
     </div>
   `;
   document.getElementById('modal-foot').innerHTML = `
