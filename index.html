@@ -1673,7 +1673,6 @@ const QT_TERMS = {
   'Invoice': [
     '* Payment due within 30 days of invoice date',
     '* Late payment may incur 1.5% monthly interest',
-    '* Account Name: Bright Production and Printing',
   ],
   'Delivery Note': [
     '* Please check all items upon receipt',
@@ -1682,7 +1681,6 @@ const QT_TERMS = {
   'Receipt': [
     '* Payment received with thanks',
     '* Please keep this receipt for your records',
-    '* Account Name: Bright Production and Printing',
   ],
 };
 
@@ -1722,6 +1720,34 @@ function renderQuotations() {
   // Group records by customer for the "records" header line
   const byCust = {};
   QUOTATIONS.forEach(q => { (byCust[q.customer || 'Unassigned'] = byCust[q.customer || 'Unassigned'] || []).push(q); });
+
+  // Find the saved PDF for a given record + doc type. Returns null if the
+  // bridge hasn't surfaced it yet (e.g. it was deleted on disk or sync hasn't
+  // run). Match is by `<docNo>_<DocTypeNoSpaces>_…` so the date suffix doesn't
+  // matter if the user changed q.date after generating.
+  const findPdf = (q, docType) => {
+    const safeCust = qtSafeFolder(q.customer);
+    const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+    const cust = QUOTATION_FILES.find(c => c.name === safeCust);
+    if (!cust) return null;
+    const proj = (cust.projects || []).find(p => p.name === safeProj);
+    if (!proj) return null;
+    const prefix = q.docNo + '_' + docType.replace(/\s+/g,'') + '_';
+    return (proj.files || []).find(f => f.name.startsWith(prefix)) || null;
+  };
+  const renderBadges = q => {
+    const list = q.generated || [];
+    if (!list.length) return '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>';
+    return list.map(g => {
+      const f = findPdf(q, g);
+      if (f) {
+        const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(f.path);
+        return `<a class="badge" href="${url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open ${f.name}" style="background:var(--accent-soft);color:var(--accent);font-size:10px;text-decoration:none;cursor:pointer;">${g}</a>`;
+      }
+      return `<span class="badge" title="File not found on disk yet — try refreshing" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">${g}</span>`;
+    }).join(' ');
+  };
+
   const recordRows = QUOTATIONS.slice().sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
     <tr onclick="openQuotationModal('${q.id}')" style="cursor:pointer;">
       <td><strong>${q.docNo || '—'}</strong></td>
@@ -1729,78 +1755,28 @@ function renderQuotations() {
       <td>${q.project || '—'}</td>
       <td>${q.date || '—'}</td>
       <td style="text-align:right;">${qtFmtAmount(qtTotals(q).grand, q.currency)}</td>
-      <td>${(q.generated||[]).map(g => `<span class="badge" style="background:var(--accent-soft);color:var(--accent);font-size:10px;">${g}</span>`).join(' ') || '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>'}</td>
+      <td>${renderBadges(q)}</td>
     </tr>
   `).join('');
-
-  // Render one file row. Used by both customer-level (legacy) and project-level files.
-  const fileRow = (f, indent) => `
-    <div class="qt-file kind-${f.type} ${qtSelectedFile && qtSelectedFile.path===f.path ? 'active':''}"
-         style="padding-left:${indent}px;"
-         onclick="qtSelectFile('${f.path.replace(/'/g,"\\'")}', '${f.type}')">
-      <svg class="qt-file-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
-      </svg>
-      <div style="flex:1;min-width:0;overflow:hidden;">
-        <div class="qt-file-name">${f.name}</div>
-        <div class="qt-file-meta">${qtFmtBytes(f.size)} · ${new Date(f.mtime).toLocaleDateString()}</div>
-      </div>
-    </div>`;
-  const fileTreeHtml = QUOTATION_FILES.length === 0
-    ? `<div class="qt-preview-empty" style="color:var(--text-3);">${qtBridgeOk===false?'<strong>Bridge offline.</strong><br>Start the bridge then click Refresh.':'No files yet — generate a PDF to see it here.'}</div>`
-    : QUOTATION_FILES.map(c => `
-        <div class="qt-customer">${c.name}</div>
-        ${(c.files || []).map(f => fileRow(f, 24)).join('')}
-        ${(c.projects || []).map(p => `
-          <div class="qt-project" style="padding:5px 14px 4px 22px;font-size:11px;font-weight:600;color:var(--text-2);background:#f6f8fb;border-top:1px solid var(--border-soft);">📁 ${p.name}</div>
-          ${p.files.map(f => fileRow(f, 38)).join('')}
-        `).join('')}
-      `).join('');
-
-  const previewHtml = qtSelectedFile
-    ? (qtSelectedFile.type === 'pdf'
-        ? `<div class="qt-pdf-host" id="qt-pdf-host"><div class="qt-pdf-loading">Rendering PDF…</div></div>`
-        : `<div style="background:#fff;padding:24px;width:100%;height:100%;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;white-space:pre;" id="qt-json-view">Loading…</div>`)
-    : `<div class="qt-preview-empty">Pick a file on the left to preview it here.<br><span style="font-size:11.5px;color:#94a3b8;">(PDF renders inline · JSON shows raw data)</span></div>`;
 
   const bridgeStatus = qtBridgeOk
     ? '<span class="qt-bridge-status ok">● Bridge connected</span>'
     : '<span class="qt-bridge-status err">● Bridge offline</span>';
 
   document.getElementById('content').innerHTML = `
-    <div class="panel" style="margin-bottom:14px;">
-      <div class="panel-head">
-        <div><div class="panel-title">Saved files on Synology Drive</div><div class="panel-sub">/SynologyDrive-team/Quotation/&lt;customer&gt;/ &nbsp;${bridgeStatus}</div></div>
-        <div class="filter-bar">
-          <button class="btn" onclick="qtToggleCollapse()">${qtPaneCollapsed?'▶ Expand':'◀ Collapse'} list</button>
-          <button class="btn" onclick="qtReloadFiles()">↻ Refresh</button>
-        </div>
-      </div>
-      <div class="qt-split" id="qt-split">
-        <div class="qt-pane-left ${qtPaneCollapsed?'collapsed':''}" id="qt-pane-left">
-          <div class="qt-list-head">Files (${quotationFileCount()})</div>
-          <div class="qt-list">${fileTreeHtml}</div>
-        </div>
-        <div class="qt-resizer" id="qt-resizer" title="Drag to resize"></div>
-        <div class="qt-pane-right">
-          <div class="qt-preview-head">${qtSelectedFile ? `<strong>${qtSelectedFile.path}</strong><a style="margin-left:auto;font-size:11.5px;color:var(--accent);" target="_blank" href="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}">Open in new tab ↗</a>` : 'Preview'}</div>
-          <div class="qt-preview-body">${previewHtml}</div>
-        </div>
-      </div>
-    </div>
-
     <div class="panel">
-      <div class="panel-head"><div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} in memory · click a row to edit</div></div></div>
+      <div class="panel-head">
+        <div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} · click a row to edit · click a status badge to open the saved PDF &nbsp;${bridgeStatus}</div></div>
+        <div class="filter-bar">
+          <button class="btn" onclick="qtReloadFiles()">↻ Refresh files</button>
+        </div>
+      </div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Doc No.</th><th>Customer</th><th>Project</th><th>Date</th><th style="text-align:right;">Grand Total</th><th>Generated</th></tr></thead>
         <tbody>${recordRows || '<tr><td colspan="6" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
       </table></div></div>
     </div>
   `;
-
-  qtBindResizer();
-  if (qtSelectedFile && qtSelectedFile.type === 'json') qtLoadJsonPreview();
-  if (qtSelectedFile && qtSelectedFile.type === 'pdf')  qtRenderPdf();
 }
 
 // Render a PDF into the right pane via pdf.js. Each page is drawn to a canvas
@@ -1895,7 +1871,7 @@ function openQuotationModal(id) {
     date: todayISO(), validUntil: '',
     currency: 'LAK', vatRate: 10,
     items: [blankLine()],
-    bankName: 'BCEL', accountNo: '0101100083435', accountName: 'Bright Production and Printing',
+    bankName: 'BCEL', accountNo: '0101100083435', accountName: 'Bright Production and Printing Individual Enterprise',
     notes: '',
     generated: [], // ['Quotation','Invoice'...] tracks which PDFs have been written
     updatedAt: Date.now(),
@@ -2401,7 +2377,14 @@ async function qtGeneratePdf(q) {
 
   // ── 6. Terms & conditions ────────────────────────────────────────────────
   const tcLines = QT_TERMS[q.docType].slice();
-  if (q.bankName) tcLines.push(`* Bank Name: ${q.bankName}  ·  Account No.: ${q.accountNo}  ·  Account Name: ${q.accountName || 'Bright Production and Printing'}`);
+  // Bank info is only relevant when money is being collected (Invoice / Receipt).
+  // Quotation and Delivery Note hide it.
+  const showBank = q.docType === 'Invoice' || q.docType === 'Receipt';
+  if (showBank && q.bankName) {
+    tcLines.push(`* Bank Name: ${q.bankName}`);
+    tcLines.push(`* Account No.: ${q.accountNo}`);
+    tcLines.push(`* Account Name: ${q.accountName || 'Bright Production and Printing Individual Enterprise'}`);
+  }
   if (q.notes)    tcLines.push('* ' + q.notes);
 
   // Compute T&C block height
