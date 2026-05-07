@@ -1742,7 +1742,7 @@ function renderQuotations() {
 
   const previewHtml = qtSelectedFile
     ? (qtSelectedFile.type === 'pdf'
-        ? `<iframe src="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}#toolbar=1"></iframe>`
+        ? `<iframe src="${QT_BRIDGE}/api/file?path=${encodeURIComponent(qtSelectedFile.path)}#toolbar=1&view=FitH&zoom=page-width"></iframe>`
         : `<div style="background:#fff;padding:24px;width:100%;height:100%;overflow:auto;font-family:ui-monospace,monospace;font-size:12px;white-space:pre;" id="qt-json-view">Loading…</div>`)
     : `<div class="qt-preview-empty">Pick a file on the left to preview it here.<br><span style="font-size:11.5px;color:#94a3b8;">(PDF renders inline · JSON shows raw data)</span></div>`;
 
@@ -2157,8 +2157,8 @@ function qtBuildDocHtml(q) {
   const lines = q.items.map((it, i) => `
     <tr>
       <td style="text-align:center;">${i+1}</td>
-      <td style="text-align:center;width:80px;">${it.photoData ? `<img src="${it.photoData}" style="max-width:70px;max-height:70px;object-fit:contain;">` : ''}</td>
-      <td style="white-space:pre-wrap;line-height:1.5;">${esc(it.description)}</td>
+      <td style="text-align:center;">${it.photoData ? `<img src="${it.photoData}" style="max-width:70px;max-height:70px;object-fit:contain;">` : ''}</td>
+      <td style="white-space:pre-wrap;line-height:1.5;word-break:break-word;">${esc(it.description)}</td>
       <td style="text-align:center;">${it.qty}</td>
       <td style="text-align:right;">${qtFmtAmount(it.unitPrice, q.currency)}</td>
       <td style="text-align:right;">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</td>
@@ -2171,7 +2171,7 @@ function qtBuildDocHtml(q) {
   const sigRight = { 'Quotation':'Approved by', 'Invoice':'Customer Sign', 'Delivery Note':'Customer Sign', 'Receipt':'Customer Sign' }[q.docType];
 
   return `
-    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:14px 18px;font-size:11px;line-height:1.4;background:#fff;">
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:14px 18px;font-size:11px;line-height:1.4;background:#fff;box-sizing:border-box;overflow-wrap:anywhere;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #142a5f;padding-bottom:10px;margin-bottom:14px;">
         <div>
           <div style="font-size:18px;font-weight:800;color:#142a5f;letter-spacing:.02em;">BRIGHT PRODUCTION &amp; PRINTING</div>
@@ -2206,7 +2206,7 @@ function qtBuildDocHtml(q) {
         <strong style="color:#142a5f;">Project:</strong> ${esc(q.project)}
       </div>
 
-      <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;">
+      <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;table-layout:fixed;">
         <thead>
           <tr style="background:#142a5f;color:#fff;">
             <th style="padding:6px 4px;border:1px solid #142a5f;width:30px;">No.</th>
