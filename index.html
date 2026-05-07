@@ -2178,10 +2178,10 @@ function qtRenderTerms() {
       </summary>
       <div style="margin-top:6px;border:1px solid var(--border);border-radius:8px;padding:8px 10px;background:#fff;max-height:300px;overflow:auto;">
         ${q.terms.map((t, i) => `
-          <div style="display:flex;gap:6px;align-items:center;padding:3px 0;">
-            <input type="checkbox" ${t.checked?'checked':''} onchange="qtToggleTermAt(${i},this.checked)" title="Include on PDF" />
-            <input type="text" value="${esc((t.text||'').replace(/^\*\s*/, ''))}" oninput="qtEditTermAt(${i}, this.value)" placeholder="Term or condition…" style="flex:1;font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;" />
-            <button type="button" onclick="qtDeleteTermAt(${i})" title="Remove this line" style="background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;padding:0 6px;line-height:1;">×</button>
+          <div style="display:flex;gap:8px;align-items:center;padding:3px 0;">
+            <input type="checkbox" ${t.checked?'checked':''} onchange="qtToggleTermAt(${i},this.checked)" title="Include on PDF" style="width:16px;height:16px;flex:0 0 16px;margin:0;padding:0;border:1px solid var(--border);border-radius:0;" />
+            <input type="text" value="${esc((t.text||'').replace(/^\*\s*/, ''))}" oninput="qtEditTermAt(${i}, this.value)" placeholder="Term or condition…" style="flex:1;min-width:0;width:auto;font-size:12.5px;padding:5px 7px;border:1px solid var(--border);border-radius:6px;" />
+            <button type="button" onclick="qtDeleteTermAt(${i})" title="Remove this line" style="flex:0 0 auto;background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;padding:0 6px;line-height:1;">×</button>
           </div>
         `).join('') || '<div style="font-size:12px;color:var(--text-3);padding:6px 0;">No terms — add one below.</div>'}
         <div style="display:flex;gap:6px;margin-top:8px;border-top:1px dashed var(--border-soft);padding-top:8px;">
@@ -2713,7 +2713,10 @@ async function qtGeneratePdf(q) {
   y += tcBoxH + 8;
 
   // ── 7. Signatures ────────────────────────────────────────────────────────
-  pageBreakIfNeeded(20);
+  // Bigger signing area: 22 mm tall (~7.7 lines of text) so there's room for
+  // a real signature stroke / company stamp without it looking cramped.
+  const SIG_BOX_H = 22;
+  pageBreakIfNeeded(SIG_BOX_H + 12);
   const sigLeft  = q.docType === 'Quotation' ? 'APPROVED BY'
                   : q.docType === 'Receipt'  ? 'RECEIVED BY'
                   : 'CUSTOMER SIGN';
@@ -2722,19 +2725,19 @@ async function qtGeneratePdf(q) {
   // signature column. Aspect-fit so tall signatures don't get squished.
   if (q.signature) {
     try {
-      const sigBoxW = sigW - 4, sigBoxH = 11;
-      pdf.addImage(q.signature, 'PNG', ML + sigW + 12 + 2, y, sigBoxW, sigBoxH, undefined, 'FAST');
+      pdf.addImage(q.signature, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
     } catch (e) { /* skip bad image */ }
   }
+  const sigLineY = y + SIG_BOX_H + 1;
   stroke(TEXT); pdf.setLineWidth(0.4);
-  pdf.line(ML, y + 12, ML + sigW, y + 12);
-  pdf.line(ML + sigW + 12, y + 12, ML + CW, y + 12);
+  pdf.line(ML, sigLineY, ML + sigW, sigLineY);
+  pdf.line(ML + sigW + 12, sigLineY, ML + CW, sigLineY);
   font(5.5, 'bold', MUTE);
-  pdf.text(sigLeft, ML, y + 16);
-  pdf.text('PREPARED BY', ML + sigW + 12, y + 16);
+  pdf.text(sigLeft, ML, sigLineY + 4);
+  pdf.text('PREPARED BY', ML + sigW + 12, sigLineY + 4);
   font(8, 'bold', NAVY);
-  pdf.text(q.customer || '—', ML, y + 19.5);
-  pdf.text('BRIGHT PRODUCTION & PRINTING', ML + sigW + 12, y + 19.5);
+  pdf.text(q.customer || '—', ML, sigLineY + 7.5);
+  pdf.text('BRIGHT PRODUCTION & PRINTING', ML + sigW + 12, sigLineY + 7.5);
 
   // ── Output + save via bridge ─────────────────────────────────────────────
   let blob;
