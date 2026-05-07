@@ -179,9 +179,9 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-preview-head strong{font-weight:600}
 .qt-preview-body{flex:1;display:flex;align-items:center;justify-content:center;overflow:auto;background:#525659}
 .qt-preview-body iframe{width:100%;height:100%;border:0;background:#fff}
-.qt-pdf-host{width:100%;height:100%;overflow:auto;display:flex;flex-direction:column;align-items:center;gap:10px;padding:14px;box-sizing:border-box}
-.qt-pdf-host canvas{max-width:100%;height:auto;box-shadow:0 4px 16px rgba(0,0,0,.25);background:#fff;display:block}
-.qt-pdf-loading{color:#cbd5e1;font-size:13px;padding:30px}
+.qt-pdf-host{width:100%;height:100%;overflow:auto;display:block;padding:14px;box-sizing:border-box}
+.qt-pdf-host canvas{display:block;width:100%!important;height:auto!important;box-shadow:0 4px 16px rgba(0,0,0,.25);background:#fff;margin:0 auto 10px}
+.qt-pdf-loading{color:#cbd5e1;font-size:13px;padding:30px;text-align:center}
 .qt-preview-empty{color:#cbd5e1;font-size:13px;text-align:center;padding:40px}
 .qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
 .qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
@@ -1791,9 +1791,10 @@ function renderQuotations() {
   if (qtSelectedFile && qtSelectedFile.type === 'pdf')  qtRenderPdf();
 }
 
-// Render a PDF into the right pane via pdf.js. Pages are drawn to <canvas> so
-// we control the scale (always fits the pane width), avoiding the browser's
-// built-in PDF viewer which ignores fit-to-width inside iframes.
+// Render a PDF into the right pane via pdf.js. Each page is drawn to a canvas
+// at a high INTERNAL resolution (sharp on retina) and then scaled down to the
+// pane width via CSS `width:100%`. This sidesteps any pane-measurement bugs
+// or browser PDF-viewer quirks — the canvas literally cannot overflow.
 async function qtRenderPdf() {
   const host = document.getElementById('qt-pdf-host');
   if (!host || !qtSelectedFile) return;
@@ -1802,21 +1803,14 @@ async function qtRenderPdf() {
     const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path);
     const pdf = await pdfjsLib.getDocument({ url }).promise;
     host.innerHTML = '';
-    // Pane width minus 28px host padding on each side; clamp to a reasonable max
-    const paneWidth = Math.max(280, host.clientWidth - 28);
+    const RENDER_SCALE = 2; // high-res bitmap; CSS scales display to 100% pane width
     for (let i = 1; i <= pdf.numPages; i++) {
       const page = await pdf.getPage(i);
-      const baseVp = page.getViewport({ scale: 1 });
-      const scale = paneWidth / baseVp.width;
-      const vp = page.getViewport({ scale });
+      const vp = page.getViewport({ scale: RENDER_SCALE });
       const canvas = document.createElement('canvas');
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width  = Math.floor(vp.width * dpr);
-      canvas.height = Math.floor(vp.height * dpr);
-      canvas.style.width  = vp.width + 'px';
-      canvas.style.height = vp.height + 'px';
+      canvas.width  = vp.width;
+      canvas.height = vp.height;
       const ctx = canvas.getContext('2d');
-      ctx.scale(dpr, dpr);
       host.appendChild(canvas);
       await page.render({ canvasContext: ctx, viewport: vp }).promise;
     }
