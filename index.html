@@ -2162,24 +2162,21 @@ async function qtGeneratePdf(q) {
   const html = qtBuildDocHtml(q);
   const holder = document.createElement('div');
   // Render at exact A4 width (210mm @ 96dpi = 794px) so html2canvas captures
-  // the doc 1:1, then jsPDF maps it back to one A4 page.
+  // the doc 1:1. The PDF flows onto additional A4 pages if the content is
+  // longer than one page — every detail stays at full readable size.
   holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;background:#fff;';
   holder.innerHTML = html;
   document.body.appendChild(holder);
   try {
-    // Measure the rendered card. If taller than ~1100px (A4 height after margins),
-    // scale html2canvas down so the whole doc still lands on one page.
     const card = holder.firstElementChild;
-    const rendered = card.getBoundingClientRect();
-    const targetH = 1100; // ~A4 portrait minus 8mm top/bottom margins
-    const fitScale = rendered.height > targetH ? (targetH / rendered.height) : 1;
     const blob = await html2pdf().set({
-      margin: [8, 8, 8, 8],
+      margin: [10, 10, 12, 10],
       filename: 'doc.pdf',
-      image: { type: 'jpeg', quality: 0.92 },
-      html2canvas: { scale: 2 * fitScale, useCORS: true, backgroundColor: '#ffffff' },
+      image: { type: 'jpeg', quality: 0.95 },
+      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+      // Allow natural multi-page flow; just avoid splitting an item row across pages.
+      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.qt-no-break'] },
     }).from(card).outputPdf('blob');
     const b64 = await blobToBase64(blob);
     // Folder layout: <Customer>/<Project>/<filename>.pdf — one subfolder per project
@@ -2326,7 +2323,7 @@ function qtBuildDocHtml(q) {
         </table>
 
         <!-- Totals: regular rows + green highlighted Grand Total -->
-        <table style="width:100%;border-collapse:collapse;font-size:11px;margin-top:-1px;">
+        <table class="qt-no-break" style="width:100%;border-collapse:collapse;font-size:11px;margin-top:-1px;">
           <colgroup><col><col style="width:90px;"></colgroup>
           <tr><td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">Total ${esc(q.currency)}</td>
               <td style="padding:6px 12px;text-align:right;font-weight:700;border:1px solid #94a3b8;">${qtFmtAmount(t.sub, q.currency)}</td></tr>
@@ -2346,7 +2343,7 @@ function qtBuildDocHtml(q) {
       </div>
 
       <!-- Signature blocks -->
-      <div style="padding:30px 16px 14px;display:grid;grid-template-columns:1fr 1fr;gap:30px;font-size:11px;text-align:center;">
+      <div class="qt-no-break" style="padding:30px 16px 14px;display:grid;grid-template-columns:1fr 1fr;gap:30px;font-size:11px;text-align:center;">
         <div>
           <div style="font-weight:700;text-decoration:underline;margin-bottom:6px;">${esc(sigLeft)}</div>
           <div style="font-weight:700;">${esc(q.customer)}</div>
