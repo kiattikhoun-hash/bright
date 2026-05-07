@@ -2058,7 +2058,7 @@ function openQuotationModal(id) {
       <div id="q-terms-host"></div>
     </div>
 
-    <div class="field" style="margin-top:14px;"><label>Signature (PREPARED BY)</label>
+    <div class="field" style="margin-top:14px;"><label>Signature (PREPARED BY) <span style="color:var(--text-3);font-weight:400;">— used on Quotation PDFs only</span></label>
       <div id="q-sig-host"></div>
     </div>
 
@@ -2859,19 +2859,20 @@ async function qtGeneratePdf(q) {
                   : q.docType === 'Receipt'  ? 'RECEIVED BY'
                   : 'CUSTOMER SIGN';
   const sigW = (CW - 12) / 2;
-  // Signature priority: per-record upload → saved default → Bright logo.
-  // Both the per-record signature and the saved default are arbitrary images
-  // (likely PNG/JPEG); the logo is rasterized SVG. addImage with 'PNG' tag
-  // works for any browser-decodable image data URL.
-  try {
-    const sigSrc = q.signature || qtGetDefaultSig();
-    if (sigSrc) {
-      pdf.addImage(sigSrc, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
-    } else {
-      const sigLogo = await qtLoadLogoPng(sigW - 4, SIG_BOX_H);
-      pdf.addImage(sigLogo, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
-    }
-  } catch (e) { /* skip bad image */ }
+  // Signature is ONLY applied to Quotations — Invoice, Delivery Note, and
+  // Receipt are signed by hand at delivery/payment, so they leave the box
+  // empty. For Quotations: per-record upload → saved default → Bright logo.
+  if (q.docType === 'Quotation') {
+    try {
+      const sigSrc = q.signature || qtGetDefaultSig();
+      if (sigSrc) {
+        pdf.addImage(sigSrc, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
+      } else {
+        const sigLogo = await qtLoadLogoPng(sigW - 4, SIG_BOX_H);
+        pdf.addImage(sigLogo, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
+      }
+    } catch (e) { /* skip bad image */ }
+  }
   const sigLineY = y + SIG_BOX_H + 1;
   stroke(TEXT); pdf.setLineWidth(0.4);
   pdf.line(ML, sigLineY, ML + sigW, sigLineY);
