@@ -188,7 +188,7 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
 .qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
 .qt-bridge-status.err{background:#fee2e2;color:var(--red)}
-.qt-line-row{display:grid;grid-template-columns:28px 84px 1fr 80px 120px 120px 26px;gap:8px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
+.qt-line-row{display:grid;grid-template-columns:26px 76px 1fr 60px 96px 96px 90px 26px;gap:6px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
 .qt-line-row.header{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-3);letter-spacing:.04em;border-bottom:1.5px solid var(--border)}
 .qt-line-row textarea{min-height:36px;resize:none;overflow:hidden;font-family:inherit;font-size:12.5px;padding:6px 8px;line-height:1.45}
 .qt-line-row input{font-size:12.5px;padding:6px 8px}
@@ -1669,7 +1669,6 @@ const QT_TERMS = {
     '* Free delivery within Vientiane Capital',
     '* Free creative design if you choose us for this project',
     '* This quotation is valid for 15 days',
-    '* Prices include VAT unless otherwise stated',
   ],
   'Invoice': [
     '* Payment due within 30 days of invoice date',
@@ -1679,10 +1678,10 @@ const QT_TERMS = {
   'Delivery Note': [
     '* Please check all items upon receipt',
     '* Report any damage within 24 hours',
-    '* Signature confirms items received in good condition',
   ],
   'Receipt': [
     '* Payment received with thanks',
+    '* Please keep this receipt for your records',
     '* Account Name: Bright Production and Printing',
   ],
 };
@@ -1883,7 +1882,7 @@ function qtBindResizer() {
 }
 
 // ── Quotation form modal ───────────────────────────────────────────────────
-function blankLine() { return { description:'', qty:1, unit:'pcs', unitPrice:0, photoData:'' }; }
+function blankLine() { return { description:'', qty:1, unit:'pcs', unitPrice:0, photoData:'', status:'' }; }
 
 function openQuotationModal(id) {
   const isEdit = !!id;
@@ -1942,7 +1941,7 @@ function openQuotationModal(id) {
       <button class="btn btn-sm" style="margin-left:auto;" onclick="qtAddLine()">+ Add Line</button>
     </div>
     <div id="q-lines">
-      <div class="qt-line-row header"><div>#</div><div>Photo</div><div>Description</div><div>Qty</div><div>Unit Price</div><div style="text-align:right;">Amount</div><div></div></div>
+      <div class="qt-line-row header"><div>#</div><div>Photo</div><div>Description</div><div>Qty</div><div>Unit Price</div><div style="text-align:right;">Amount</div><div title="Used as the Amount column on Delivery Note PDFs">Status (DN)</div><div></div></div>
       <div id="q-lines-body"></div>
     </div>
 
@@ -2042,6 +2041,7 @@ function qtRenderLines() {
       <input type="number" step="any" value="${it.qty}" oninput="qtUpdateLine(${i},'qty',this.value)" />
       <input type="number" step="any" value="${it.unitPrice}" oninput="qtUpdateLine(${i},'unitPrice',this.value)" />
       <div class="qt-line-amt" id="q-amt-${i}">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</div>
+      <input type="text" value="${(it.status||'').replace(/"/g,'&quot;')}" placeholder="e.g. Delivered" oninput="qtUpdateLine(${i},'status',this.value)" />
       <button class="qt-line-del" onclick="qtRemoveLine(${i})" title="Remove line">×</button>
     </div>
   `).join('');
@@ -2312,6 +2312,10 @@ async function qtGeneratePdf(q) {
   // on a single visual line (autotable will only wrap once the line truly
   // exceeds the column width).
   const flatDesc = s => (s || '').replace(/\s*\n+\s*/g, ' · ').replace(/\s{2,}/g, ' ').trim();
+  // For Delivery Notes the rightmost column is a free-text STATUS instead of
+  // a computed amount — same column slot, different label and value.
+  const isDN = q.docType === 'Delivery Note';
+  const lastColLabel = isDN ? 'STATUS' : 'AMOUNT';
   const bodyRows = q.items.map((it, i) => {
     const amt = (+it.qty||0) * (+it.unitPrice||0);
     return [
@@ -2320,14 +2324,14 @@ async function qtGeneratePdf(q) {
       flatDesc(it.description),
       it.qty,
       qtFmtAmount(it.unitPrice, q.currency),
-      qtFmtAmount(amt, q.currency),
+      isDN ? (it.status || '—') : qtFmtAmount(amt, q.currency),
     ];
   });
 
   pdf.autoTable({
     startY: y,
     margin: { left: ML, right: MR, top: MT, bottom: MB },
-    head: [['NO.', 'SAMPLE', 'DESCRIPTION', 'QTY', 'UNIT PRICE', 'AMOUNT']],
+    head: [['NO.', 'SAMPLE', 'DESCRIPTION', 'QTY', 'UNIT PRICE', lastColLabel]],
     body: bodyRows,
     styles: { fontSize: 8.5, cellPadding: 2.4, lineColor: [226, 232, 240], lineWidth: 0.15, valign: 'middle' },
     headStyles: { fillColor: NAVY, textColor: 255, fontSize: 7.5, fontStyle: 'bold', halign: 'center', cellPadding: 3 },
@@ -2337,7 +2341,9 @@ async function qtGeneratePdf(q) {
       2: { halign: 'left',   cellWidth: 'auto' },
       3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
       4: { halign: 'right',  cellWidth: 26, textColor: [71,85,105] },
-      5: { halign: 'right',  cellWidth: 30, fontStyle: 'bold', textColor: TEXT },
+      5: isDN
+        ? { halign: 'center', cellWidth: 30, fontStyle: 'bold', textColor: NAVY }
+        : { halign: 'right',  cellWidth: 30, fontStyle: 'bold', textColor: TEXT },
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     didDrawCell: (data) => {
