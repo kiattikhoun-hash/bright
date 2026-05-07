@@ -8,6 +8,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.5.0/dist/chart.umd.js" integrity="sha384-iU8HYtnGQ8Cy4zl7gbNMOhsDTTKX02BTXptVP/vqAWIaTfM7isw76iyZCsjL2eVi" crossorigin="anonymous"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
 <script>if (window.pdfjsLib) pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';</script>
 <style>
@@ -2158,70 +2159,285 @@ function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\
 // ── PDF generator ──────────────────────────────────────────────────────────
 // Renders a fresh HTML doc in a hidden container, runs html2pdf to produce a Blob,
 // then ships the bytes to the bridge so it lands in the Synology Drive folder.
+// Build the PDF directly with jsPDF primitives (rectangles + text + images).
+// All coordinates are in millimetres on a real A4 page, so content physically
+// cannot overflow the page width. Tables auto-paginate via the jspdf-autotable
+// plugin. Replaces the previous html2canvas-based renderer entirely.
 async function qtGeneratePdf(q) {
-  const html = qtBuildDocHtml(q);
-  // Render the doc inside an iframe so layout is isolated from the host page
-  // (no inherited fonts, no media queries, no outer styles). The iframe's body
-  // is forced to A4 logical width and we hand its scrollWidth / scrollHeight
-  // directly to html2canvas so the capture is strictly clamped to A4.
-  const RENDER_W = 794;     // A4 portrait width in CSS px @ 96dpi
-  const TARGET_H = 1063;    // A4 portrait height minus ~16mm margin
-  const iframe = document.createElement('iframe');
-  iframe.style.cssText = 'position:fixed;left:-99999px;top:0;width:' + RENDER_W + 'px;height:1200px;border:0;background:#fff;';
-  document.body.appendChild(iframe);
-  try {
-    const doc = iframe.contentDocument;
-    doc.open();
-    doc.write(`<!doctype html><html><head><meta charset="utf-8">
-      <style>
-        *{box-sizing:border-box}
-        html,body{margin:0;padding:0;background:#fff;width:${RENDER_W}px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;}
-        body>div{width:${RENDER_W}px!important;max-width:${RENDER_W}px!important;}
-      </style>
-    </head><body>${html}</body></html>`);
-    doc.close();
-    // Allow images inside the iframe to load
-    await new Promise(r => setTimeout(r, 80));
-    const card = doc.body.firstElementChild;
-    const rendered = card.getBoundingClientRect();
-    // Shrink capture vertically if the doc would exceed one A4 page
-    const fitScale = rendered.height > TARGET_H ? TARGET_H / rendered.height : 1;
-    const blob = await html2pdf().set({
-      margin: [8, 8, 8, 8],
-      filename: 'doc.pdf',
-      image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: {
-        scale: 2 * fitScale,
-        useCORS: true,
-        backgroundColor: '#ffffff',
-        width: RENDER_W,
-        height: rendered.height,
-        windowWidth: RENDER_W,
-        windowHeight: rendered.height,
-        x: 0, y: 0,
-      },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
-    }).from(card).outputPdf('blob');
-    const b64 = await blobToBase64(blob);
-    // Folder layout: <Customer>/<Project>/<filename>.pdf — one subfolder per project
-    // so a customer with multiple jobs stays organized.
-    const safeCust = qtSafeFolder(q.customer);
-    const safeProj = qtSafeFolder(q.project || 'Untitled Project');
-    const safeDoc  = q.docType.replace(/\s+/g,'');
-    const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
-    const result = await qtFetch('/api/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ path: `${safeCust}/${safeProj}/${filename}`, contentBase64: b64 }),
-    });
-    if (result?.ok) {
-      if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+  const jsPDF = (window.jspdf && window.jspdf.jsPDF) || window.jsPDF;
+  if (!jsPDF) { showToast('jsPDF not loaded — check internet'); return; }
+
+  // ── A4 portrait page geometry (in mm) ────────────────────────────────────
+  const PG_W = 210, PG_H = 297;
+  const ML = 12, MR = 12, MT = 12, MB = 14;
+  const CW = PG_W - ML - MR;          // content width = 186 mm
+  const NAVY = [20, 42, 95];
+  const AMBER = [245, 158, 11];
+  const TEXT = [15, 23, 42];
+  const MUTE = [148, 163, 184];
+  const BG_SOFT = [248, 250, 252];
+
+  const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
+
+  // helper — set font in one call
+  const font = (size, weight = 'normal', color = TEXT) => {
+    pdf.setFont('helvetica', weight);
+    pdf.setFontSize(size);
+    pdf.setTextColor(color[0], color[1], color[2]);
+  };
+  const fill = c => pdf.setFillColor(c[0], c[1], c[2]);
+  const stroke = c => pdf.setDrawColor(c[0], c[1], c[2]);
+
+  // dd-MMM-yy
+  const niceDt = s => {
+    if (!s) return '—';
+    const d = parseLocalDate(s);
+    const m = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    return String(d.getDate()).padStart(2,'0') + '-' + m[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
+  };
+
+  // ── 1. Top header band (navy) ────────────────────────────────────────────
+  let y = MT;
+  fill(NAVY); pdf.rect(ML, y, CW, 16, 'F');
+  // amber accent below navy bar
+  fill(AMBER); pdf.rect(ML, y + 16, CW * 0.35, 0.8, 'F');
+  fill(NAVY);  pdf.rect(ML + CW * 0.35, y + 16, CW * 0.65, 0.8, 'F');
+
+  // logo tile (white) — amber bulb glyph
+  fill([255,255,255]); pdf.roundedRect(ML + 3, y + 3, 10, 10, 1.2, 1.2, 'F');
+  fill(AMBER); pdf.circle(ML + 8, y + 7.5, 2.4, 'F');
+  pdf.rect(ML + 6.5, y + 9.7, 3, 0.8, 'F');
+  pdf.rect(ML + 6.8, y + 10.6, 2.4, 0.6, 'F');
+
+  // BRIGHT wordmark (white) on navy bar
+  font(11, 'bold', [255,255,255]);
+  pdf.text('BRIGHT', ML + 16, y + 7.5);
+  font(5.5, 'bold', [203, 213, 225]);
+  pdf.text('PRODUCTION & PRINTING', ML + 16, y + 11.5);
+
+  // address right-aligned
+  font(7.5, 'normal', [203, 213, 225]);
+  pdf.text('Thongpong Village, Sikhodtabong District, Vientiane Lao PDR', ML + CW - 3, y + 7, { align: 'right' });
+  pdf.text('Tel 020 555 97 992  ·  info@brightprinting.la', ML + CW - 3, y + 11, { align: 'right' });
+
+  y += 22;
+
+  // ── 2. Hero band: doc-type heading + meta cards ─────────────────────────
+  font(7, 'bold', AMBER);
+  pdf.text('BRIGHT PRODUCTION & PRINTING', ML, y);
+  font(20, 'bold', NAVY);
+  pdf.text(q.docType.toUpperCase(), ML, y + 8);
+
+  // Meta cards on the right (Date / Valid Until / Doc No)
+  const cardW = 32, cardH = 11, cardGap = 1.5;
+  const meta = [
+    { label: 'DATE', value: niceDt(q.date), inverted: false },
+  ];
+  if (q.validUntil) meta.push({ label: 'VALID UNTIL', value: niceDt(q.validUntil), inverted: false });
+  meta.push({ label: 'DOC NO.', value: q.docNo, inverted: true });
+
+  let cx = ML + CW;
+  for (let i = meta.length - 1; i >= 0; i--) {
+    const m = meta[i];
+    cx -= cardW;
+    if (m.inverted) {
+      fill(NAVY); pdf.roundedRect(cx, y - 3, cardW, cardH, 1.2, 1.2, 'F');
+      font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
+      font(8.5, 'bold', [255,255,255]); pdf.text(m.value, cx + 2, y + 4.5);
     } else {
-      showToast('Bridge offline — PDF could not be saved');
+      stroke([226, 232, 240]); fill([255,255,255]);
+      pdf.roundedRect(cx, y - 3, cardW, cardH, 1.2, 1.2, 'FD');
+      font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
+      font(8.5, 'bold', TEXT); pdf.text(m.value, cx + 2, y + 4.5);
     }
-  } finally {
-    document.body.removeChild(iframe);
+    cx -= cardGap;
+  }
+
+  y += 14;
+
+  // ── 3. Customer card (soft gray, 2-col grid) ─────────────────────────────
+  const custH = 28;
+  fill(BG_SOFT); pdf.roundedRect(ML, y, CW, custH, 2, 2, 'F');
+
+  font(6, 'bold', MUTE);
+  pdf.text('BILL TO', ML + 4, y + 4.5);
+
+  const colW = (CW - 12) / 2;
+  const fields = [
+    ['CUSTOMER', q.customer || '—', 'PROJECT', q.project || '—'],
+    ['ADDRESS', q.address || '—', 'CONTACT PERSON', q.contactPerson || '—'],
+    ['OFFICE NUMBER', q.officeNumber || '—', 'CONTACT NUMBER', q.contactNumber || '—'],
+    ['EMAIL', q.email || '—', '', ''],
+  ];
+  let fy = y + 9;
+  for (const [l1, v1, l2, v2] of fields) {
+    font(5.5, 'bold', MUTE);
+    pdf.text(l1, ML + 4, fy);
+    font(8.5, 'bold', NAVY);
+    pdf.text(pdf.splitTextToSize(v1, colW - 4), ML + 4, fy + 3);
+    if (l2) {
+      font(5.5, 'bold', MUTE);
+      pdf.text(l2, ML + 4 + colW + 4, fy);
+      font(8.5, 'bold', NAVY);
+      pdf.text(pdf.splitTextToSize(v2, colW - 4), ML + 4 + colW + 4, fy + 3);
+    }
+    fy += 4.8;
+  }
+
+  y += custH + 4;
+
+  // ── 4. Items table (auto-paginates) ──────────────────────────────────────
+  if (typeof pdf.autoTable !== 'function') {
+    showToast('autotable plugin not loaded — check internet');
+    return;
+  }
+
+  // Pre-render description as multi-line text (bold first line). autotable
+  // will measure these strings and wrap them to fit the column.
+  const bodyRows = q.items.map((it, i) => {
+    const amt = (+it.qty||0) * (+it.unitPrice||0);
+    return [
+      i + 1,
+      '',                           // photo cell (drawn in didDrawCell)
+      it.description || '',
+      it.qty,
+      qtFmtAmount(it.unitPrice, q.currency),
+      qtFmtAmount(amt, q.currency),
+    ];
+  });
+
+  pdf.autoTable({
+    startY: y,
+    margin: { left: ML, right: MR, top: MT, bottom: MB },
+    head: [['NO.', 'SAMPLE', 'DESCRIPTION', 'QTY', 'UNIT PRICE', 'AMOUNT']],
+    body: bodyRows,
+    styles: { fontSize: 8.5, cellPadding: 2.4, lineColor: [226, 232, 240], lineWidth: 0.15, valign: 'middle' },
+    headStyles: { fillColor: NAVY, textColor: 255, fontSize: 7.5, fontStyle: 'bold', halign: 'center', cellPadding: 3 },
+    columnStyles: {
+      0: { halign: 'center', cellWidth: 8,  textColor: MUTE,         fontStyle: 'bold' },
+      1: { halign: 'center', cellWidth: 26, minCellHeight: 22 },
+      2: { halign: 'left',   cellWidth: 'auto' },
+      3: { halign: 'center', cellWidth: 11, fontStyle: 'bold' },
+      4: { halign: 'right',  cellWidth: 26, textColor: [71,85,105] },
+      5: { halign: 'right',  cellWidth: 30, fontStyle: 'bold', textColor: TEXT },
+    },
+    alternateRowStyles: { fillColor: [248, 250, 252] },
+    didDrawCell: (data) => {
+      // Inject photo into the Sample column
+      if (data.section === 'body' && data.column.index === 1) {
+        const it = q.items[data.row.index];
+        if (it && it.photoData) {
+          try {
+            const pad = 1.5;
+            const w = data.cell.width - pad * 2;
+            const h = data.cell.height - pad * 2;
+            pdf.addImage(it.photoData, 'JPEG',
+              data.cell.x + pad, data.cell.y + pad, w, h, undefined, 'FAST');
+          } catch (e) { /* skip bad images */ }
+        }
+      }
+    },
+  });
+  y = pdf.lastAutoTable.finalY + 4;
+
+  // ── helpers for sections that need to fit on the same page ──
+  const pageBreakIfNeeded = neededH => {
+    if (y + neededH > PG_H - MB) { pdf.addPage(); y = MT; }
+  };
+
+  // ── 5. Totals (right-aligned with navy Grand Total card) ─────────────────
+  pageBreakIfNeeded(28);
+  const totW = 70;
+  const totX = ML + CW - totW;
+  const t = qtTotals(q);
+
+  font(8.5, 'normal', [71, 85, 105]);
+  pdf.text('Subtotal', totX + 2, y + 3.5);
+  font(8.5, 'bold', TEXT);
+  pdf.text(qtFmtAmount(t.sub, q.currency), totX + totW - 2, y + 3.5, { align: 'right' });
+
+  stroke([226, 232, 240]);
+  pdf.setLineWidth(0.15);
+  pdf.line(totX, y + 6, totX + totW, y + 6);
+
+  font(8.5, 'normal', [71, 85, 105]);
+  pdf.text(`VAT (${q.vatRate}%)`, totX + 2, y + 9.5);
+  font(8.5, 'bold', TEXT);
+  pdf.text(qtFmtAmount(t.vat, q.currency), totX + totW - 2, y + 9.5, { align: 'right' });
+
+  fill(NAVY); pdf.roundedRect(totX, y + 13, totW, 13, 2, 2, 'F');
+  font(5.5, 'bold', MUTE);
+  pdf.text('GRAND TOTAL', totX + 3, y + 17.5);
+  font(6, 'normal', [203, 213, 225]);
+  pdf.text(q.currency, totX + 3, y + 21);
+  font(13, 'bold', [255,255,255]);
+  pdf.text(qtFmtAmount(t.grand, q.currency), totX + totW - 3, y + 21, { align: 'right' });
+
+  y += 30;
+
+  // ── 6. Terms & conditions ────────────────────────────────────────────────
+  const tcLines = QT_TERMS[q.docType].slice();
+  if (q.bankName) tcLines.push(`* Bank Name: ${q.bankName}  ·  Account No.: ${q.accountNo}  ·  Account Name: ${q.accountName || 'Bright Production and Printing'}`);
+  if (q.notes)    tcLines.push('* ' + q.notes);
+
+  // Compute T&C block height
+  const tcLabelH = 5;
+  const tcBoxPad = 4;
+  const tcLineH = 4.2;
+  const wrapped = tcLines.map(l => pdf.splitTextToSize('• ' + l.replace(/^\*\s*/, ''), CW - tcBoxPad * 2));
+  const tcBoxH = tcBoxPad * 2 + wrapped.reduce((n, ls) => n + ls.length, 0) * tcLineH;
+
+  pageBreakIfNeeded(tcLabelH + 2 + tcBoxH);
+
+  font(6, 'bold', MUTE);
+  pdf.text('TERMS & CONDITIONS', ML, y + 3);
+  y += tcLabelH;
+
+  fill([250, 251, 252]); pdf.rect(ML, y, CW, tcBoxH, 'F');
+  fill(AMBER); pdf.rect(ML, y, 1.2, tcBoxH, 'F');
+
+  let tx = y + tcBoxPad + 2.5;
+  font(8, 'normal', [71, 85, 105]);
+  for (const lines of wrapped) {
+    for (const line of lines) {
+      pdf.text(line, ML + tcBoxPad, tx);
+      tx += tcLineH;
+    }
+  }
+  y += tcBoxH + 8;
+
+  // ── 7. Signatures ────────────────────────────────────────────────────────
+  pageBreakIfNeeded(20);
+  const sigLeft  = q.docType === 'Quotation' ? 'APPROVED BY'
+                  : q.docType === 'Receipt'  ? 'RECEIVED BY'
+                  : 'CUSTOMER SIGN';
+  const sigW = (CW - 12) / 2;
+  stroke(TEXT); pdf.setLineWidth(0.4);
+  pdf.line(ML, y + 12, ML + sigW, y + 12);
+  pdf.line(ML + sigW + 12, y + 12, ML + CW, y + 12);
+  font(5.5, 'bold', MUTE);
+  pdf.text(sigLeft, ML, y + 16);
+  pdf.text('PREPARED BY', ML + sigW + 12, y + 16);
+  font(8, 'bold', NAVY);
+  pdf.text(q.customer || '—', ML, y + 19.5);
+  pdf.text('BRIGHT PRODUCTION & PRINTING', ML + sigW + 12, y + 19.5);
+
+  // ── Output + save via bridge ─────────────────────────────────────────────
+  const blob = pdf.output('blob');
+  const b64 = await blobToBase64(blob);
+  const safeCust = qtSafeFolder(q.customer);
+  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const safeDoc  = q.docType.replace(/\s+/g,'');
+  const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
+  const result = await qtFetch('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: `${safeCust}/${safeProj}/${filename}`, contentBase64: b64 }),
+  });
+  if (result?.ok) {
+    if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+  } else {
+    showToast('Bridge offline — PDF could not be saved');
   }
 }
 
