@@ -181,9 +181,9 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
 .qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
 .qt-bridge-status.err{background:#fee2e2;color:var(--red)}
-.qt-line-row{display:grid;grid-template-columns:36px 88px 1fr 70px 90px 110px 100px 30px;gap:6px;align-items:start;padding:6px 0;border-bottom:1px dashed var(--border-soft)}
+.qt-line-row{display:grid;grid-template-columns:30px 92px 1fr 70px 110px 110px 28px;gap:8px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
 .qt-line-row.header{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-3);letter-spacing:.04em;border-bottom:1.5px solid var(--border)}
-.qt-line-row textarea{min-height:42px;resize:vertical;font-family:inherit;font-size:12.5px;padding:6px 8px}
+.qt-line-row textarea{min-height:108px;resize:vertical;font-family:inherit;font-size:13px;padding:8px 10px;line-height:1.5}
 .qt-line-row input{font-size:12.5px;padding:6px 8px}
 .qt-line-row .qt-line-amt{align-self:center;text-align:right;font-weight:600;color:var(--text)}
 .qt-line-row .qt-line-del{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;align-self:center}
@@ -1895,7 +1895,7 @@ function openQuotationModal(id) {
       <button class="btn btn-sm" style="margin-left:auto;" onclick="qtAddLine()">+ Add Line</button>
     </div>
     <div id="q-lines">
-      <div class="qt-line-row header"><div>#</div><div>Photo</div><div>Description</div><div>Qty</div><div>Unit</div><div>Unit Price</div><div style="text-align:right;">Amount</div><div></div></div>
+      <div class="qt-line-row header"><div>#</div><div>Photo</div><div>Description</div><div>Qty</div><div>Unit Price</div><div style="text-align:right;">Amount</div><div></div></div>
       <div id="q-lines-body"></div>
     </div>
 
@@ -1991,9 +1991,8 @@ function qtRenderLines() {
       <div class="qt-line-photo" onclick="qtPickLinePhoto(${i})" title="Click to ${it.photoData?'replace':'add'} photo">
         ${it.photoData ? `<img src="${it.photoData}">` : 'Click to<br>add photo'}
       </div>
-      <textarea oninput="qtUpdateLine(${i},'description',this.value)" placeholder="Item description (multi-line OK)…">${(it.description||'').replace(/</g,'&lt;')}</textarea>
+      <textarea oninput="qtUpdateLine(${i},'description',this.value)" placeholder="Item description (size, material, color, finishing — multi-line OK)…">${(it.description||'').replace(/</g,'&lt;')}</textarea>
       <input type="number" step="any" value="${it.qty}" oninput="qtUpdateLine(${i},'qty',this.value)" />
-      <input value="${(it.unit||'').replace(/"/g,'&quot;')}" oninput="qtUpdateLine(${i},'unit',this.value)" placeholder="pcs" />
       <input type="number" step="any" value="${it.unitPrice}" oninput="qtUpdateLine(${i},'unitPrice',this.value)" />
       <div class="qt-line-amt" id="q-amt-${i}">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</div>
       <button class="qt-line-del" onclick="qtRemoveLine(${i})" title="Remove line">×</button>
@@ -2100,17 +2099,26 @@ function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\
 async function qtGeneratePdf(q) {
   const html = qtBuildDocHtml(q);
   const holder = document.createElement('div');
+  // Render at exact A4 width (210mm @ 96dpi = 794px) so html2canvas captures
+  // the doc 1:1, then jsPDF maps it back to one A4 page.
   holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;background:#fff;';
   holder.innerHTML = html;
   document.body.appendChild(holder);
   try {
+    // Measure the rendered card. If taller than ~1100px (A4 height after margins),
+    // scale html2canvas down so the whole doc still lands on one page.
+    const card = holder.firstElementChild;
+    const rendered = card.getBoundingClientRect();
+    const targetH = 1100; // ~A4 portrait minus 8mm top/bottom margins
+    const fitScale = rendered.height > targetH ? (targetH / rendered.height) : 1;
     const blob = await html2pdf().set({
-      margin: [10, 10, 12, 10],
+      margin: [8, 8, 8, 8],
       filename: 'doc.pdf',
       image: { type: 'jpeg', quality: 0.92 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
-      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' },
-    }).from(holder.firstElementChild).outputPdf('blob');
+      html2canvas: { scale: 2 * fitScale, useCORS: true, backgroundColor: '#ffffff' },
+      jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
+    }).from(card).outputPdf('blob');
     const b64 = await blobToBase64(blob);
     const safeCust = qtSafeFolder(q.customer);
     const safeDoc  = q.docType.replace(/\s+/g,'');
@@ -2150,9 +2158,8 @@ function qtBuildDocHtml(q) {
     <tr>
       <td style="text-align:center;">${i+1}</td>
       <td style="text-align:center;width:80px;">${it.photoData ? `<img src="${it.photoData}" style="max-width:70px;max-height:70px;object-fit:contain;">` : ''}</td>
-      <td style="white-space:pre-wrap;">${esc(it.description)}</td>
+      <td style="white-space:pre-wrap;line-height:1.5;">${esc(it.description)}</td>
       <td style="text-align:center;">${it.qty}</td>
-      <td style="text-align:center;">${esc(it.unit)}</td>
       <td style="text-align:right;">${qtFmtAmount(it.unitPrice, q.currency)}</td>
       <td style="text-align:right;">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</td>
     </tr>
@@ -2164,7 +2171,7 @@ function qtBuildDocHtml(q) {
   const sigRight = { 'Quotation':'Approved by', 'Invoice':'Customer Sign', 'Delivery Note':'Customer Sign', 'Receipt':'Customer Sign' }[q.docType];
 
   return `
-    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:20px 24px;font-size:11px;line-height:1.4;background:#fff;">
+    <div style="font-family:Helvetica,Arial,sans-serif;color:#1a1d23;width:794px;padding:14px 18px;font-size:11px;line-height:1.4;background:#fff;">
       <div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:2px solid #142a5f;padding-bottom:10px;margin-bottom:14px;">
         <div>
           <div style="font-size:18px;font-weight:800;color:#142a5f;letter-spacing:.02em;">BRIGHT PRODUCTION &amp; PRINTING</div>
@@ -2199,19 +2206,18 @@ function qtBuildDocHtml(q) {
         <strong style="color:#142a5f;">Project:</strong> ${esc(q.project)}
       </div>
 
-      <table style="width:100%;border-collapse:collapse;font-size:10px;margin-bottom:10px;">
+      <table style="width:100%;border-collapse:collapse;font-size:10.5px;margin-bottom:10px;">
         <thead>
           <tr style="background:#142a5f;color:#fff;">
             <th style="padding:6px 4px;border:1px solid #142a5f;width:30px;">No.</th>
             <th style="padding:6px 4px;border:1px solid #142a5f;width:80px;">Sample</th>
             <th style="padding:6px 4px;border:1px solid #142a5f;text-align:left;">Description</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:40px;">Qty</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:50px;">Unit</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:90px;">Unit Price</th>
-            <th style="padding:6px 4px;border:1px solid #142a5f;width:100px;">Amount</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:50px;">Qty</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:100px;">Unit Price</th>
+            <th style="padding:6px 4px;border:1px solid #142a5f;width:110px;">Amount</th>
           </tr>
         </thead>
-        <tbody style="background:#fff;">${lines.replace(/<td/g,'<td style="border:1px solid #cbd5e1;padding:5px 4px;vertical-align:top;')}</tbody>
+        <tbody style="background:#fff;">${lines.replace(/<td/g,'<td style="border:1px solid #cbd5e1;padding:6px 5px;vertical-align:top;')}</tbody>
       </table>
 
       <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
@@ -2222,7 +2228,7 @@ function qtBuildDocHtml(q) {
         </table>
       </div>
 
-      <div style="display:flex;gap:18px;margin-bottom:18px;font-size:10px;">
+      <div style="display:flex;gap:14px;margin-bottom:14px;font-size:10px;">
         <div style="flex:1;padding:8px 12px;background:#fef3c7;border-left:3px solid #f59e0b;border-radius:3px;">
           <div style="font-weight:700;margin-bottom:4px;color:#92400e;">${esc(termsHeading)}</div>
           ${termsBody}
@@ -2236,7 +2242,7 @@ function qtBuildDocHtml(q) {
         </div>
       </div>
 
-      <div style="display:flex;gap:30px;margin-top:30px;font-size:10px;">
+      <div style="display:flex;gap:24px;margin-top:22px;font-size:10px;">
         <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigLeft)}</div>
         <div style="flex:1;text-align:center;border-top:1px solid #1a1d23;padding-top:6px;">${esc(sigRight)}</div>
       </div>
