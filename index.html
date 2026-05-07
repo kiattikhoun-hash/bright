@@ -2162,21 +2162,24 @@ async function qtGeneratePdf(q) {
   const html = qtBuildDocHtml(q);
   const holder = document.createElement('div');
   // Render at exact A4 width (210mm @ 96dpi = 794px) so html2canvas captures
-  // the doc 1:1. The PDF flows onto additional A4 pages if the content is
-  // longer than one page — every detail stays at full readable size.
+  // the doc 1:1. If the content is taller than one A4 page we scale the
+  // capture down so everything still lands on a single sheet.
   holder.style.cssText = 'position:fixed;left:-99999px;top:0;width:794px;background:#fff;';
   holder.innerHTML = html;
   document.body.appendChild(holder);
   try {
     const card = holder.firstElementChild;
+    const rendered = card.getBoundingClientRect();
+    // A4 portrait = 1123 px @ 96dpi; subtract ~16mm of vertical margin (60 px).
+    const targetH = 1063;
+    const fitScale = rendered.height > targetH ? targetH / rendered.height : 1;
     const blob = await html2pdf().set({
-      margin: [10, 10, 12, 10],
+      margin: [8, 8, 8, 8],
       filename: 'doc.pdf',
       image: { type: 'jpeg', quality: 0.95 },
-      html2canvas: { scale: 2, useCORS: true, backgroundColor: '#ffffff' },
+      html2canvas: { scale: 2 * fitScale, useCORS: true, backgroundColor: '#ffffff' },
       jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait', compress: true },
-      // Allow natural multi-page flow; just avoid splitting an item row across pages.
-      pagebreak: { mode: ['css', 'legacy'], avoid: ['tr', '.qt-no-break'] },
+      pagebreak: { mode: ['avoid-all', 'css', 'legacy'] },
     }).from(card).outputPdf('blob');
     const b64 = await blobToBase64(blob);
     // Folder layout: <Customer>/<Project>/<filename>.pdf — one subfolder per project
