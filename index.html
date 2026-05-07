@@ -1766,7 +1766,7 @@ function renderQuotations() {
     : '<span class="qt-bridge-status err">● Bridge offline</span>';
 
   const displayPanel = qtSelectedFile ? `
-    <div class="panel" style="margin-top:14px;">
+    <div class="panel" style="margin-bottom:14px;">
       <div class="panel-head">
         <div><div class="panel-title">Preview</div><div class="panel-sub">${qtSelectedFile.name || qtSelectedFile.path}</div></div>
         <div class="filter-bar">
@@ -1780,9 +1780,10 @@ function renderQuotations() {
     </div>` : '';
 
   document.getElementById('content').innerHTML = `
+    ${displayPanel}
     <div class="panel">
       <div class="panel-head">
-        <div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} · click a row to edit · click a status badge to preview the PDF below &nbsp;${bridgeStatus}</div></div>
+        <div><div class="panel-title">Records</div><div class="panel-sub">${QUOTATIONS.length} quotation${QUOTATIONS.length===1?'':'s'} · click a row to edit · click a status badge to preview the PDF above &nbsp;${bridgeStatus}</div></div>
         <div class="filter-bar">
           <button class="btn" onclick="qtReloadFiles()">↻ Refresh files</button>
         </div>
@@ -1792,7 +1793,6 @@ function renderQuotations() {
         <tbody>${recordRows || '<tr><td colspan="6" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
       </table></div></div>
     </div>
-    ${displayPanel}
   `;
 
   if (qtSelectedFile) qtRenderPdf();
@@ -1882,11 +1882,8 @@ function qtShowInPanel(path, name) {
   qtSelectedFile = { path, name, type: 'pdf' };
   if (currentView === 'quotations') {
     render();
-    // Scroll the new panel into view so it's obvious where the click landed.
-    setTimeout(() => {
-      const el = document.querySelector('#qt-pdf-host');
-      if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    }, 50);
+    // Scroll to top so the preview panel (now at the top of the view) is visible.
+    setTimeout(() => window.scrollTo({ top: 0, behavior: 'smooth' }), 50);
   }
 }
 function qtClosePreview() {
