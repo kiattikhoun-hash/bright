@@ -2694,11 +2694,6 @@ async function qtGeneratePdf(q) {
     pdf.addImage(logoPng, 'PNG', ML + 1, y + (16 - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
 
-  // address right-aligned
-  font(7.5, 'normal', [203, 213, 225]);
-  pdf.text('Thongpong Village, Sikhodtabong District, Vientiane Lao PDR', ML + CW - 3, y + 7, { align: 'right' });
-  pdf.text('Tel 020 555 97 992  ·  info@brightprinting.la', ML + CW - 3, y + 11, { align: 'right' });
-
   y += 22;
 
   // ── 2. Hero band: doc-type heading + meta cards ─────────────────────────
@@ -2944,6 +2939,30 @@ async function qtGeneratePdf(q) {
   font(8, 'bold', NAVY);
   pdf.text(q.customer || '—', ML, sigLineY + 7.5);
   pdf.text('BRIGHT PRODUCTION & PRINTING', ML + sigW + 12, sigLineY + 7.5);
+
+  // ── Footer (drawn on every page) ─────────────────────────────────────────
+  // Company address + contact info, plus a thin amber/navy accent strip,
+  // applied AFTER all content is laid out so autotable's auto-pagination
+  // doesn't leave any pages unfooted.
+  const totalPages = pdf.internal.getNumberOfPages();
+  const footY = PG_H - MB + 4; // start ~4 mm into the bottom margin
+  for (let p = 1; p <= totalPages; p++) {
+    pdf.setPage(p);
+    // accent strip
+    fill(AMBER); pdf.rect(ML, footY - 2, CW * 0.35, 0.6, 'F');
+    fill(NAVY);  pdf.rect(ML + CW * 0.35, footY - 2, CW * 0.65, 0.6, 'F');
+    // address line
+    font(7, 'normal', [71, 85, 105]);
+    pdf.text('Thongpong Village, Sikhodtabong District, Vientiane Lao PDR', ML + CW / 2, footY + 1.5, { align: 'center' });
+    // tel + email
+    font(7, 'normal', [100, 116, 139]);
+    pdf.text('Tel 020 555 97 992  ·  info@brightprinting.la', ML + CW / 2, footY + 5, { align: 'center' });
+    // page number on the right (only show when >1 page)
+    if (totalPages > 1) {
+      font(6, 'normal', [148, 163, 184]);
+      pdf.text(`${p} / ${totalPages}`, ML + CW, footY + 5, { align: 'right' });
+    }
+  }
 
   // ── Output + save via bridge ─────────────────────────────────────────────
   let blob;
