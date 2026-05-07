@@ -1776,6 +1776,10 @@ function renderQuotations() {
       <td>${q.date || '—'}</td>
       <td style="text-align:right;">${qtFmtAmount(qtTotals(q).grand, q.currency)}</td>
       <td>${renderBadges(q)}</td>
+      <td style="text-align:center;width:42px;">
+        <button onclick="event.stopPropagation();qtDeleteRecord('${q.id}')" title="Delete record"
+          style="background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:6px;">🗑</button>
+      </td>
     </tr>
   `).join('');
 
@@ -1808,8 +1812,8 @@ function renderQuotations() {
         </div>
       </div>
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
-        <thead><tr><th>Doc No.</th><th>Customer</th><th>Project</th><th>Date</th><th style="text-align:right;">Grand Total</th><th>Generated</th></tr></thead>
-        <tbody>${recordRows || '<tr><td colspan="6" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
+        <thead><tr><th>Doc No.</th><th>Customer</th><th>Project</th><th>Date</th><th style="text-align:right;">Grand Total</th><th>Generated</th><th></th></tr></thead>
+        <tbody>${recordRows || '<tr><td colspan="7" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
       </table></div></div>
     </div>
   `;
