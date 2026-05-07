@@ -1730,6 +1730,26 @@ function qtFindPdf(q, docType) {
   const prefix = q.docNo + '_' + docType.replace(/\s+/g,'') + '_';
   return (proj.files || []).find(f => f.name.startsWith(prefix)) || null;
 }
+// Build the same path qtGeneratePdf would write to. Used as a fallback when
+// QUOTATION_FILES hasn't been populated yet but we know the file exists.
+function qtBuildPath(q, docType) {
+  const safeCust = qtSafeFolder(q.customer);
+  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const safeDoc = docType.replace(/\s+/g,'');
+  const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
+  return `${safeCust}/${safeProj}/${filename}`;
+}
+// Preview a record's generated PDF by record id + doc type. Resolves the path
+// via QUOTATION_FILES first, falling back to a constructed path if the listing
+// is stale. Called from the records-table badge onclick.
+function qtPreviewByDoc(qId, docType) {
+  const q = QUOTATIONS.find(x => x.id === qId);
+  if (!q) { showToast('Record not found'); return; }
+  const f = qtFindPdf(q, docType);
+  const path = f ? f.path : qtBuildPath(q, docType);
+  const name = f ? f.name : path.split('/').pop();
+  qtShowInPanel(path, name);
+}
 
 function renderQuotations() {
   // Group records by customer for the "records" header line
@@ -1741,13 +1761,10 @@ function renderQuotations() {
     if (!list.length) return '<span class="badge" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">draft</span>';
     return list.map(g => {
       const f = qtFindPdf(q, g);
-      if (f) {
-        const safePath = f.path.replace(/'/g,"\\'");
-        const safeName = f.name.replace(/'/g,"\\'");
-        const isActive = qtSelectedFile && qtSelectedFile.path === f.path;
-        return `<span class="badge" onclick="event.stopPropagation();qtShowInPanel('${safePath}','${safeName}')" title="Open ${f.name}" style="background:${isActive?'var(--accent)':'var(--accent-soft)'};color:${isActive?'#fff':'var(--accent)'};font-size:10px;cursor:pointer;">${g}</span>`;
-      }
-      return `<span class="badge" title="File not found on disk yet — try refreshing" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">${g}</span>`;
+      const activePath = f ? f.path : qtBuildPath(q, g);
+      const isActive = qtSelectedFile && qtSelectedFile.path === activePath;
+      const tip = f ? `Click to preview ${f.name}` : 'Click to preview (file may still be syncing)';
+      return `<span class="badge" onclick="event.stopPropagation();qtPreviewByDoc('${q.id}','${g}')" title="${tip}" style="background:${isActive?'var(--accent)':'var(--accent-soft)'};color:${isActive?'#fff':'var(--accent)'};font-size:10px;cursor:pointer;user-select:none;">👁 ${g}</span>`;
     }).join(' ');
   };
 
