@@ -2124,10 +2124,11 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
   qtPersistRecords();
 
   let pdfOk = !generatePdf; // success unless we tried to generate
+  let savedPath = null;
   if (generatePdf) {
     try {
-      await qtGeneratePdf(q);
-      pdfOk = true;
+      savedPath = await qtGeneratePdf(q);
+      pdfOk = !!savedPath;
     } catch (e) {
       pdfOk = false;
       console.error('[qt] generate failed', e);
@@ -2136,6 +2137,8 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
   }
 
   await qtRefreshFiles();
+  // Auto-select the just-saved PDF so it appears in the preview pane immediately.
+  if (savedPath) qtSelectedFile = { path: savedPath, type: 'pdf' };
   closeModal();
   if (generatePdf) {
     showToast(pdfOk ? `${q.docType} PDF saved to Synology Drive` : 'Record saved (PDF failed)');
@@ -2459,9 +2462,11 @@ async function qtGeneratePdf(q) {
   if (result?.ok) {
     if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
     console.log('[qt] PDF saved to', result.path, '·', result.size, 'bytes');
+    return result.path;
   } else {
     showToast('Bridge offline — PDF could not be saved');
     console.error('[qt] save failed — is the bridge running on :7860?');
+    return null;
   }
 }
 
