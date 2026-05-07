@@ -2098,6 +2098,8 @@ function openQuotationModal(id) {
 }
 
 // ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
+// When q.signature is empty, the Bright logo is used as the default signature
+// (matches the brand mark in the page header). Upload to replace it.
 function qtRenderSignature() {
   const host = document.getElementById('q-sig-host');
   if (!host) return;
@@ -2107,12 +2109,26 @@ function qtRenderSignature() {
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
         <img src="${q.signature}" style="max-height:60px;max-width:240px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
         <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Replace</button>
-        <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Remove</button>
+        <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Use default (logo)</button>
       </div>`;
   } else {
+    // Show the inline logo as the default signature preview
+    const svg = document.getElementById('bright-logo-master');
+    const logoMarkup = svg ? svg.outerHTML : '';
     host.innerHTML = `
-      <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload signature image</button>
-      <span style="margin-left:8px;font-size:11.5px;color:var(--text-3);">PNG with transparent background works best · placed above "PREPARED BY" on the PDF</span>`;
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <div style="height:60px;width:120px;border:1px dashed var(--border);background:#0a2c65;padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+          <div style="width:100%;height:100%;">${logoMarkup}</div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload to replace</button>
+          <span style="font-size:11.5px;color:var(--text-3);">Default: Bright logo · placed above "PREPARED BY" on the PDF</span>
+        </div>
+      </div>`;
+    // The inlined clone will inherit a duplicate `id="bright-logo-master"`,
+    // which is harmless visually but breaks our DOM lookup. Clear it.
+    const dup = host.querySelector('#bright-logo-master');
+    if (dup) dup.removeAttribute('id');
   }
 }
 function qtPickSignature() {
@@ -2784,12 +2800,16 @@ async function qtGeneratePdf(q) {
                   : 'CUSTOMER SIGN';
   const sigW = (CW - 12) / 2;
   // Drop the uploaded signature above the PREPARED BY line, fitted into the
-  // signature column. Aspect-fit so tall signatures don't get squished.
-  if (q.signature) {
-    try {
+  // signature column. If no custom signature was uploaded, fall back to the
+  // Bright logo as the default brand-mark signature.
+  try {
+    if (q.signature) {
       pdf.addImage(q.signature, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
-    } catch (e) { /* skip bad image */ }
-  }
+    } else {
+      const sigLogo = await qtLoadLogoPng(sigW - 4, SIG_BOX_H);
+      pdf.addImage(sigLogo, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
+    }
+  } catch (e) { /* skip bad image */ }
   const sigLineY = y + SIG_BOX_H + 1;
   stroke(TEXT); pdf.setLineWidth(0.4);
   pdf.line(ML, sigLineY, ML + sigW, sigLineY);
