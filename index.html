@@ -1741,8 +1741,9 @@ function renderQuotations() {
     return list.map(g => {
       const f = findPdf(q, g);
       if (f) {
-        const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(f.path);
-        return `<a class="badge" href="${url}" target="_blank" rel="noopener" onclick="event.stopPropagation()" title="Open ${f.name}" style="background:var(--accent-soft);color:var(--accent);font-size:10px;text-decoration:none;cursor:pointer;">${g}</a>`;
+        const safePath = f.path.replace(/'/g,"\\'");
+        const safeName = f.name.replace(/'/g,"\\'");
+        return `<span class="badge" onclick="event.stopPropagation();qtOpenPdfModal('${safePath}','${safeName}')" title="Open ${f.name}" style="background:var(--accent-soft);color:var(--accent);font-size:10px;cursor:pointer;">${g}</span>`;
       }
       return `<span class="badge" title="File not found on disk yet — try refreshing" style="background:var(--gray-soft);color:var(--text-3);font-size:10px;">${g}</span>`;
     }).join(' ');
@@ -1777,6 +1778,45 @@ function renderQuotations() {
       </table></div></div>
     </div>
   `;
+}
+
+// Pop the saved PDF up in the global modal — used when the user clicks a
+// status badge in the records table. Reuses the same modal-bg/body container
+// the quotation form lives in.
+async function qtOpenPdfModal(path, name) {
+  const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(path);
+  document.getElementById('modal-title').textContent = name;
+  document.getElementById('modal-body').innerHTML =
+    `<div id="qt-modal-pdf" style="background:#f1f5f9;padding:14px;border-radius:8px;max-height:75vh;overflow:auto;">
+       <div style="text-align:center;color:#94a3b8;padding:30px;">Rendering PDF…</div>
+     </div>`;
+  document.getElementById('modal-foot').innerHTML =
+    `<a class="btn" target="_blank" rel="noopener" href="${url}">Open in new tab ↗</a>
+     <div style="flex:1"></div>
+     <button class="btn" onclick="closeModal()">Close</button>`;
+  document.getElementById('modal-bg').classList.add('show');
+
+  const host = document.getElementById('qt-modal-pdf');
+  if (!window.pdfjsLib) {
+    host.innerHTML = '<div style="text-align:center;color:#94a3b8;padding:30px;">PDF renderer not loaded — check internet.</div>';
+    return;
+  }
+  try {
+    const doc = await pdfjsLib.getDocument({ url }).promise;
+    host.innerHTML = '';
+    const RENDER_SCALE = 2;
+    for (let i = 1; i <= doc.numPages; i++) {
+      const page = await doc.getPage(i);
+      const vp = page.getViewport({ scale: RENDER_SCALE });
+      const canvas = document.createElement('canvas');
+      canvas.width = vp.width; canvas.height = vp.height;
+      canvas.style.cssText = 'display:block;width:100%;height:auto;background:#fff;box-shadow:0 1px 3px rgba(15,23,42,.12);margin-bottom:10px;border-radius:4px;';
+      host.appendChild(canvas);
+      await page.render({ canvasContext: canvas.getContext('2d'), viewport: vp }).promise;
+    }
+  } catch (e) {
+    host.innerHTML = `<div style="text-align:center;color:#ef4444;padding:30px;">Failed to render: ${e.message}</div>`;
+  }
 }
 
 // Render a PDF into the right pane via pdf.js. Each page is drawn to a canvas
