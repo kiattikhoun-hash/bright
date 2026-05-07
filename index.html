@@ -2686,11 +2686,12 @@ async function qtGeneratePdf(q) {
   fill(AMBER); pdf.rect(ML, y + 16, CW * 0.35, 0.8, 'F');
   fill(NAVY);  pdf.rect(ML + CW * 0.35, y + 16, CW * 0.65, 0.8, 'F');
 
-  // Real Bright logo (rasterized SVG) on the left side of the navy bar,
-  // half the previous footprint. Vertically centred inside the 16 mm bar.
+  // Bright logo on the left side of the navy bar — height bumped ~10 px
+  // (≈3 mm), width scaled to preserve aspect, vertically centred in the bar.
   try {
-    const logoPng = await qtLoadLogoPng(30, 8);
-    pdf.addImage(logoPng, 'PNG', ML + 1, y + 4, 30, 8, undefined, 'FAST');
+    const LOGO_W = 41, LOGO_H = 11;
+    const logoPng = await qtLoadLogoPng(LOGO_W, LOGO_H);
+    pdf.addImage(logoPng, 'PNG', ML + 1, y + (16 - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
 
   // address right-aligned
