@@ -1986,7 +1986,7 @@ function openQuotationModal(id) {
     docNo: 'BR-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*900+100),
     customer: '', address: '', officeNumber: '', contactPerson: '', contactNumber: '', email: '',
     project: '',
-    date: todayISO(), validUntil: '',
+    date: todayISO(), validUntil: qtAddDays(todayISO(), 15),
     currency: 'LAK', vatRate: 10,
     items: [blankLine()],
     bankName: 'BCEL', accountNo: '0101100083435', accountName: 'Bright Production and Printing Individual Enterprise',
@@ -2015,8 +2015,8 @@ function openQuotationModal(id) {
       <div class="field"><label>Email</label><input id="q-email" value="${q.email||''}" /></div>
     </div>
     <div class="field-row-3">
-      <div class="field"><label>Date</label><input id="q-date" type="date" value="${q.date||''}" /></div>
-      <div class="field"><label>Valid Until</label><input id="q-valid" type="date" value="${q.validUntil||''}" /></div>
+      <div class="field"><label>Date</label><input id="q-date" type="date" value="${q.date||''}" oninput="qtAutoValid()" /></div>
+      <div class="field"><label>Valid Until <span style="color:var(--text-3);font-weight:400;">(auto: +15 days)</span></label><input id="q-valid" type="date" value="${q.validUntil||''}" /></div>
       <div class="field"><label>Currency</label>
         <select id="q-curr">${['LAK','USD','THB'].map(c => `<option ${c===q.currency?'selected':''}>${c}</option>`).join('')}</select>
       </div>
@@ -2445,6 +2445,28 @@ async function qtDeleteRecord(id) {
 
 // Strip slashes/control chars so a customer name is safe as a folder name
 function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim() || 'Unassigned'; }
+
+// Add `n` calendar days to a YYYY-MM-DD ISO string and return YYYY-MM-DD.
+function qtAddDays(iso, n) {
+  if (!iso) return '';
+  const d = parseLocalDate(iso);
+  d.setDate(d.getDate() + n);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${dd}`;
+}
+
+// Auto-fill the Valid Until field as Date + 15 days when the user changes the
+// Date input. Always overwrites to keep the +15 invariant — quotation T&C
+// promises the doc is valid for 15 days from the issue date.
+function qtAutoValid() {
+  const dateEl = document.getElementById('q-date');
+  const validEl = document.getElementById('q-valid');
+  if (!dateEl || !validEl) return;
+  const v = qtAddDays(dateEl.value, 15);
+  if (v) validEl.value = v;
+}
 
 // Rasterize the inline #bright-logo-master SVG (in the page DOM) to a PNG
 // dataURL at the requested mm size. Reading from the DOM avoids any external
