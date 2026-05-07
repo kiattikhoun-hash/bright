@@ -1990,6 +1990,7 @@ function openQuotationModal(id) {
     currency: 'LAK', vatRate: 10,
     items: [blankLine()],
     bankName: 'BCEL', accountNo: '0101100083435', accountName: 'Bright Production and Printing Individual Enterprise',
+    signature: qtGetDefaultSig(),
     notes: '',
     generated: [], // ['Quotation','Invoice'...] tracks which PDFs have been written
     updatedAt: Date.now(),
@@ -2098,38 +2099,93 @@ function openQuotationModal(id) {
 }
 
 // ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
-// When q.signature is empty, the Bright logo is used as the default signature
-// (matches the brand mark in the page header). Upload to replace it.
+// A "default" signature can be saved in localStorage so every new quotation
+// auto-fills with it. Upload once, click ★ Save as default, and you're done.
+const QT_DEFAULT_SIG_KEY = 'qt_default_signature_v1';
+function qtGetDefaultSig() {
+  try { return localStorage.getItem(QT_DEFAULT_SIG_KEY) || ''; } catch(e) { return ''; }
+}
+function qtSetDefaultSig(d) {
+  try { localStorage.setItem(QT_DEFAULT_SIG_KEY, d); } catch(e) {}
+}
+function qtClearDefaultSig() {
+  try { localStorage.removeItem(QT_DEFAULT_SIG_KEY); } catch(e) {}
+}
+
 function qtRenderSignature() {
   const host = document.getElementById('q-sig-host');
   if (!host) return;
   const q = qtCurrentRecord();
+  const saved = qtGetDefaultSig();
   if (q.signature) {
+    const isAlreadyDefault = saved === q.signature;
     host.innerHTML = `
       <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <img src="${q.signature}" style="max-height:60px;max-width:240px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
-        <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Replace</button>
-        <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Use default (logo)</button>
+        <img src="${q.signature}" style="max-height:80px;max-width:260px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="display:flex;gap:6px;">
+            <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Replace</button>
+            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearSignature()">Use default</button>
+          </div>
+          ${isAlreadyDefault
+            ? '<span style="font-size:11.5px;color:var(--accent);">★ This is your default signature</span>'
+            : `<button type="button" class="btn btn-sm" onclick="qtSaveCurrentAsDefault()" title="Use this image on every new quotation">★ Save as default</button>`}
+        </div>
       </div>`;
   } else {
-    // Show the inline logo as the default signature preview
-    const svg = document.getElementById('bright-logo-master');
-    const logoMarkup = svg ? svg.outerHTML : '';
-    host.innerHTML = `
-      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-        <div style="height:60px;width:120px;border:1px dashed var(--border);background:#0a2c65;padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center;">
-          <div style="width:100%;height:100%;">${logoMarkup}</div>
-        </div>
-        <div style="display:flex;flex-direction:column;gap:4px;">
-          <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload to replace</button>
-          <span style="font-size:11.5px;color:var(--text-3);">Default: Bright logo · placed above "PREPARED BY" on the PDF</span>
-        </div>
-      </div>`;
-    // The inlined clone will inherit a duplicate `id="bright-logo-master"`,
-    // which is harmless visually but breaks our DOM lookup. Clear it.
-    const dup = host.querySelector('#bright-logo-master');
-    if (dup) dup.removeAttribute('id');
+    // No per-record signature → fall back to the saved default (if any),
+    // or the Bright logo as the brand-mark fallback.
+    if (saved) {
+      host.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <img src="${saved}" style="max-height:80px;max-width:260px;border:1px solid var(--border);background:#fff;padding:4px;border-radius:6px;" />
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <div style="display:flex;gap:6px;">
+              <button type="button" class="btn btn-sm" onclick="qtUseDefaultSignature()">Use as record signature</button>
+              <button type="button" class="btn btn-sm" onclick="qtPickSignature()">Upload different</button>
+            </div>
+            <button type="button" class="btn btn-sm" style="color:var(--red);border-color:var(--red);" onclick="qtClearDefaultSigUI()">Clear default</button>
+            <span style="font-size:11.5px;color:var(--text-3);">★ Default signature · used on every PDF unless replaced</span>
+          </div>
+        </div>`;
+    } else {
+      const svg = document.getElementById('bright-logo-master');
+      const logoMarkup = svg ? svg.outerHTML : '';
+      host.innerHTML = `
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <div style="height:60px;width:120px;border:1px dashed var(--border);background:#0a2c65;padding:4px;border-radius:6px;display:flex;align-items:center;justify-content:center;">
+            <div style="width:100%;height:100%;">${logoMarkup}</div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <button type="button" class="btn btn-sm" onclick="qtPickSignature()">📎 Upload signature</button>
+            <span style="font-size:11.5px;color:var(--text-3);">No default set · Bright logo will be used. Upload once, then click ★ Save as default.</span>
+          </div>
+        </div>`;
+      const dup = host.querySelector('#bright-logo-master');
+      if (dup) dup.removeAttribute('id');
+    }
   }
+}
+function qtSaveCurrentAsDefault() {
+  const q = qtCurrentRecord();
+  if (!q.signature) { showToast('Upload a signature first'); return; }
+  qtSetDefaultSig(q.signature);
+  showToast('Saved as default — every new quotation will use this signature');
+  qtRenderSignature();
+}
+function qtUseDefaultSignature() {
+  const saved = qtGetDefaultSig();
+  if (!saved) return;
+  const q = qtCurrentRecord();
+  q.signature = saved;
+  qtSetCurrentRecord(q);
+  qtRenderSignature();
+}
+function qtClearDefaultSigUI() {
+  if (!confirm('Clear the saved default signature? New quotations will fall back to the Bright logo.')) return;
+  qtClearDefaultSig();
+  qtRenderSignature();
+  showToast('Default signature cleared');
 }
 function qtPickSignature() {
   const inp = document.createElement('input');
@@ -2799,12 +2855,14 @@ async function qtGeneratePdf(q) {
                   : q.docType === 'Receipt'  ? 'RECEIVED BY'
                   : 'CUSTOMER SIGN';
   const sigW = (CW - 12) / 2;
-  // Drop the uploaded signature above the PREPARED BY line, fitted into the
-  // signature column. If no custom signature was uploaded, fall back to the
-  // Bright logo as the default brand-mark signature.
+  // Signature priority: per-record upload → saved default → Bright logo.
+  // Both the per-record signature and the saved default are arbitrary images
+  // (likely PNG/JPEG); the logo is rasterized SVG. addImage with 'PNG' tag
+  // works for any browser-decodable image data URL.
   try {
-    if (q.signature) {
-      pdf.addImage(q.signature, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
+    const sigSrc = q.signature || qtGetDefaultSig();
+    if (sigSrc) {
+      pdf.addImage(sigSrc, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
     } else {
       const sigLogo = await qtLoadLogoPng(sigW - 4, SIG_BOX_H);
       pdf.addImage(sigLogo, 'PNG', ML + sigW + 12 + 2, y, sigW - 4, SIG_BOX_H, undefined, 'FAST');
