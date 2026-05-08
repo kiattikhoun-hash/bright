@@ -188,9 +188,12 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-bridge-status{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 8px;border-radius:5px}
 .qt-bridge-status.ok{background:var(--green-soft);color:var(--green)}
 .qt-bridge-status.err{background:#fee2e2;color:var(--red)}
-.qt-line-row{display:grid;grid-template-columns:26px 76px 1fr 60px 96px 96px 90px 26px;gap:6px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
+.qt-line-row{display:grid;grid-template-columns:26px 76px minmax(160px,220px) 70px 110px 110px 110px 26px;gap:6px;align-items:start;padding:8px 0;border-bottom:1px dashed var(--border-soft)}
 .qt-line-row.header{font-weight:600;font-size:11px;text-transform:uppercase;color:var(--text-3);letter-spacing:.04em;border-bottom:1.5px solid var(--border)}
-.qt-line-row textarea{min-height:36px;resize:none;overflow:hidden;font-family:inherit;font-size:12.5px;padding:6px 8px;line-height:1.45}
+/* Description textarea: shorter column, but newlines + spaces still work
+   correctly because we keep white-space:pre-wrap and word-break:break-word.
+   resize:none + qtAutoGrow handles auto-height. */
+.qt-line-row textarea{min-height:36px;resize:none;overflow:hidden;font-family:inherit;font-size:12.5px;padding:6px 8px;line-height:1.45;white-space:pre-wrap;word-break:break-word;width:100%}
 .qt-line-row input{font-size:12.5px;padding:6px 8px}
 .qt-line-row .qt-line-amt{align-self:center;text-align:right;font-weight:600;color:var(--text)}
 .qt-line-row .qt-line-del{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;align-self:center}
@@ -584,7 +587,11 @@ function setView(v) {
   Object.values(charts).forEach(c => c && c.destroy && c.destroy()); charts = {};
   render();
   // When entering Quotations, kick off a bridge refresh and re-render with the file tree
-  if (v === 'quotations') qtRefreshFiles().then(() => { if (currentView === 'quotations') render(); });
+  if (v === 'quotations') {
+    Promise.all([qtRefreshFiles(), qtSyncDefaultSigFromBridge()]).then(() => {
+      if (currentView === 'quotations') render();
+    });
+  }
 }
 function showPinGate() {
   document.getElementById('page-title').textContent = 'Admin Access';
@@ -2235,17 +2242,48 @@ function qtAutofillFromContact() {
 }
 
 // ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
-// A "default" signature can be saved in localStorage so every new quotation
-// auto-fills with it. Upload once, click ★ Save as default, and you're done.
-const QT_DEFAULT_SIG_KEY = 'qt_default_signature_v1';
+// A "default" signature is saved to a sentinel file in the Synology Drive
+// folder (`_default-signature.png`) so it auto-syncs to every other device
+// that mounts the same shared folder. localStorage acts as a per-device
+// cache so reads stay synchronous; cross-device pull happens on view-enter
+// via qtSyncDefaultSigFromBridge().
+const QT_DEFAULT_SIG_KEY  = 'qt_default_signature_v1';
+const QT_DEFAULT_SIG_PATH = '_default-signature.png';
 function qtGetDefaultSig() {
   try { return localStorage.getItem(QT_DEFAULT_SIG_KEY) || ''; } catch(e) { return ''; }
 }
-function qtSetDefaultSig(d) {
+async function qtSetDefaultSig(d) {
   try { localStorage.setItem(QT_DEFAULT_SIG_KEY, d); } catch(e) {}
+  if (!d) return;
+  const b64 = d.includes(',') ? d.split(',')[1] : d;
+  // Upload to the shared folder so other devices syncing the same Synology
+  // share pick it up automatically. Best-effort: silently fail if offline.
+  await qtFetch('/api/save', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path: QT_DEFAULT_SIG_PATH, contentBase64: b64 }),
+  });
 }
-function qtClearDefaultSig() {
+async function qtClearDefaultSig() {
   try { localStorage.removeItem(QT_DEFAULT_SIG_KEY); } catch(e) {}
+  await qtFetch('/api/delete?path=' + encodeURIComponent(QT_DEFAULT_SIG_PATH), { method: 'DELETE' });
+}
+// Pull the default signature from the shared folder into the local cache.
+// Called when the user enters the Quotations view, so each device picks up
+// any new default that another device uploaded.
+async function qtSyncDefaultSigFromBridge() {
+  try {
+    const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_DEFAULT_SIG_PATH));
+    if (!r.ok) return;
+    const blob = await r.blob();
+    const dataUrl = await new Promise((resolve, reject) => {
+      const fr = new FileReader();
+      fr.onload = () => resolve(fr.result);
+      fr.onerror = reject;
+      fr.readAsDataURL(blob);
+    });
+    localStorage.setItem(QT_DEFAULT_SIG_KEY, dataUrl);
+  } catch (e) { /* bridge offline or no default uploaded yet — keep cache */ }
 }
 
 function qtRenderSignature() {
@@ -2337,11 +2375,12 @@ function qtUnblankSignature() {
   qtSetCurrentRecord(q);
   qtRenderSignature();
 }
-function qtSaveCurrentAsDefault() {
+async function qtSaveCurrentAsDefault() {
   const q = qtCurrentRecord();
   if (!q.signature) { showToast('Upload a signature first'); return; }
-  qtSetDefaultSig(q.signature);
-  showToast('Saved as default — every new quotation will use this signature');
+  showToast('Syncing default signature to shared folder…');
+  await qtSetDefaultSig(q.signature);
+  showToast('Saved as default — synced to all devices via Synology Drive');
   qtRenderSignature();
 }
 function qtUseDefaultSignature() {
@@ -2352,11 +2391,11 @@ function qtUseDefaultSignature() {
   qtSetCurrentRecord(q);
   qtRenderSignature();
 }
-function qtClearDefaultSigUI() {
-  if (!confirm('Clear the saved default signature? New quotations will fall back to the Bright logo.')) return;
-  qtClearDefaultSig();
+async function qtClearDefaultSigUI() {
+  if (!confirm('Clear the saved default signature? This removes it from the shared folder so other devices fall back to the Bright logo too.')) return;
+  await qtClearDefaultSig();
   qtRenderSignature();
-  showToast('Default signature cleared');
+  showToast('Default signature cleared on all devices');
 }
 function qtPickSignature() {
   const inp = document.createElement('input');
@@ -2720,6 +2759,70 @@ function qtProjectFolderName(q) {
   return q.projectFolderDate ? `${q.projectFolderDate} ${safe}` : safe;
 }
 
+// Lazy-fetched Noto Sans Lao TTF. Fetched once per session, cached as base64
+// so all subsequent PDFs reuse it without re-downloading.
+let __qtLaoFontB64 = null;
+async function qtFetchLaoFontB64() {
+  if (__qtLaoFontB64) return __qtLaoFontB64;
+  const urls = [
+    'https://cdn.jsdelivr.net/gh/notofonts/lao@main/fonts/NotoSansLao/full/ttf/NotoSansLao-Regular.ttf',
+    'https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/notosanslao/NotoSansLao-Regular.ttf',
+    'https://raw.githubusercontent.com/google/fonts/main/ofl/notosanslao/NotoSansLao-Regular.ttf',
+  ];
+  for (const url of urls) {
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const buf = await resp.arrayBuffer();
+      // ArrayBuffer → base64 (chunked to avoid stack overflow on very large fonts)
+      const bytes = new Uint8Array(buf);
+      let binary = '';
+      const CHUNK = 0x8000;
+      for (let i = 0; i < bytes.length; i += CHUNK) {
+        binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
+      }
+      __qtLaoFontB64 = btoa(binary);
+      console.log('[qt] Lao font loaded from', url, '·', Math.round(bytes.length / 1024), 'KB');
+      return __qtLaoFontB64;
+    } catch (e) { /* try next */ }
+  }
+  console.warn('[qt] Lao font fetch failed — Lao text will fall back to Helvetica');
+  return null;
+}
+
+// Register the cached Noto Sans Lao TTF with the given jsPDF instance and
+// monkey-patch pdf.text so every draw call that contains Lao characters
+// auto-switches to the Lao font and restores the previous font afterwards.
+async function qtAttachLaoFont(pdf) {
+  const b64 = await qtFetchLaoFontB64();
+  if (!b64) return false;
+  try {
+    pdf.addFileToVFS('NotoSansLao-Regular.ttf', b64);
+    // Register the same TTF for both styles so setFont('NotoSansLao','bold')
+    // doesn't throw. Bold Lao won't be visually bolder but will render.
+    pdf.addFont('NotoSansLao-Regular.ttf', 'NotoSansLao', 'normal');
+    pdf.addFont('NotoSansLao-Regular.ttf', 'NotoSansLao', 'bold');
+  } catch (e) {
+    console.warn('[qt] Lao font register failed', e);
+    return false;
+  }
+  const HAS_LAO = /[຀-໿]/;
+  const origText = pdf.text.bind(pdf);
+  pdf.text = function(txt, x, y, opts) {
+    // txt may be string OR array (when caller used splitTextToSize)
+    const probe = Array.isArray(txt) ? txt.join('') : (typeof txt === 'string' ? txt : '');
+    if (probe && HAS_LAO.test(probe)) {
+      const prev = pdf.getFont();
+      const style = (prev.fontStyle === 'bold') ? 'bold' : 'normal';
+      pdf.setFont('NotoSansLao', style);
+      try { return origText(txt, x, y, opts); }
+      finally { pdf.setFont(prev.fontName, prev.fontStyle); }
+    }
+    return origText(txt, x, y, opts);
+  };
+  return true;
+}
+
 // ── Doc-No. helpers ─────────────────────────────────────────────────────────
 // Each doc type gets its own unique Doc No. so a single record can produce
 // four distinct numbered PDFs. Numbers live on q.docNos (object keyed by
@@ -2822,6 +2925,11 @@ async function qtGeneratePdf(q) {
 
   const pdf = new jsPDF({ unit: 'mm', format: 'a4', orientation: 'portrait', compress: true });
 
+  // Wire in Lao font support — must happen BEFORE any pdf.text calls so the
+  // monkey-patched wrapper covers them. Quietly falls through to Helvetica
+  // if the CDN fetch fails (offline, blocked).
+  await qtAttachLaoFont(pdf);
+
   // helper — set font in one call
   const font = (size, weight = 'normal', color = TEXT) => {
     pdf.setFont('helvetica', weight);
@@ -2839,22 +2947,24 @@ async function qtGeneratePdf(q) {
     return String(d.getDate()).padStart(2,'0') + '-' + m[d.getMonth()] + '-' + String(d.getFullYear()).slice(-2);
   };
 
-  // ── 1. Top header band (navy) ────────────────────────────────────────────
+  // ── 1. Top header band (navy) — half height (8 mm) ───────────────────────
+  const BAR_H = 8;
   let y = MT;
-  fill(NAVY); pdf.rect(ML, y, CW, 16, 'F');
+  fill(NAVY); pdf.rect(ML, y, CW, BAR_H, 'F');
   // amber accent below navy bar
-  fill(AMBER); pdf.rect(ML, y + 16, CW * 0.35, 0.8, 'F');
-  fill(NAVY);  pdf.rect(ML + CW * 0.35, y + 16, CW * 0.65, 0.8, 'F');
+  fill(AMBER); pdf.rect(ML, y + BAR_H, CW * 0.35, 0.8, 'F');
+  fill(NAVY);  pdf.rect(ML + CW * 0.35, y + BAR_H, CW * 0.65, 0.8, 'F');
 
-  // Bright logo on the left side of the navy bar — height bumped ~10 px
-  // (≈3 mm), width scaled to preserve aspect, vertically centred in the bar.
+  // Bright logo on the left side of the navy bar — scaled to half the bar
+  // height (so it stays vertically centred at the new ~8 mm height).
   try {
-    const LOGO_W = 41, LOGO_H = 11;
+    const LOGO_H = 5.5;                      // was 11 mm
+    const LOGO_W = 41 * (LOGO_H / 11);       // keep aspect ratio
     const logoPng = await qtLoadLogoPng(LOGO_W, LOGO_H);
-    pdf.addImage(logoPng, 'PNG', ML + 1, y + (16 - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
+    pdf.addImage(logoPng, 'PNG', ML + 1, y + (BAR_H - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
 
-  y += 22;
+  y += BAR_H + 6; // bar + accent + small gap before hero band
 
   // ── 2. Hero band: doc-type heading + meta cards ─────────────────────────
   font(7, 'bold', AMBER);
@@ -2865,22 +2975,25 @@ async function qtGeneratePdf(q) {
   // Meta cards on the right (Date / Valid Until / Doc No)
   const cardW = 32, cardH = 11, cardGap = 1.5;
   const meta = [
-    { label: 'DATE', value: niceDt(q.date), inverted: false },
+    { label: 'DATE', value: niceDt(q.date), inverted: false, w: cardW },
   ];
-  if (q.validUntil) meta.push({ label: 'VALID UNTIL', value: niceDt(q.validUntil), inverted: false });
-  meta.push({ label: 'DOC NO.', value: qtDocNoFor(q, q.docType), inverted: true });
+  if (q.validUntil) meta.push({ label: 'VALID UNTIL', value: niceDt(q.validUntil), inverted: false, w: cardW });
+  // Doc No. card sized 3 mm wider than the others — the per-type doc number
+  // (e.g. BR-INV-20260508-001) is too long for a 32 mm card.
+  meta.push({ label: 'DOC NO.', value: qtDocNoFor(q, q.docType), inverted: true, w: cardW + 3 });
 
   let cx = ML + CW;
   for (let i = meta.length - 1; i >= 0; i--) {
     const m = meta[i];
-    cx -= cardW;
+    const w = m.w || cardW;
+    cx -= w;
     if (m.inverted) {
-      fill(NAVY); pdf.roundedRect(cx, y - 3, cardW, cardH, 1.2, 1.2, 'F');
+      fill(NAVY); pdf.roundedRect(cx, y - 3, w, cardH, 1.2, 1.2, 'F');
       font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
       font(8.5, 'bold', [255,255,255]); pdf.text(m.value, cx + 2, y + 4.5);
     } else {
       stroke([226, 232, 240]); fill([255,255,255]);
-      pdf.roundedRect(cx, y - 3, cardW, cardH, 1.2, 1.2, 'FD');
+      pdf.roundedRect(cx, y - 3, w, cardH, 1.2, 1.2, 'FD');
       font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
       font(8.5, 'bold', TEXT); pdf.text(m.value, cx + 2, y + 4.5);
     }
@@ -2889,9 +3002,11 @@ async function qtGeneratePdf(q) {
 
   y += 14;
 
-  // ── 3. Customer card (soft gray, 2-col grid) ─────────────────────────────
+  // ── 3. Customer card (white background, thin border, 2-col grid) ─────────
   const custH = 28;
-  fill(BG_SOFT); pdf.roundedRect(ML, y, CW, custH, 2, 2, 'F');
+  stroke([226, 232, 240]); fill([255,255,255]);
+  pdf.setLineWidth(0.2);
+  pdf.roundedRect(ML, y, CW, custH, 2, 2, 'FD');
 
   font(6, 'bold', MUTE);
   pdf.text('BILL TO', ML + 4, y + 4.5);
@@ -2963,7 +3078,8 @@ async function qtGeneratePdf(q) {
         ? { halign: 'center', cellWidth: 30, fontStyle: 'bold', textColor: NAVY }
         : { halign: 'right',  cellWidth: 30, fontStyle: 'bold', textColor: TEXT },
     },
-    alternateRowStyles: { fillColor: [248, 250, 252] },
+    // No alternating row stripes — keep the table clean white.
+    alternateRowStyles: { fillColor: [255, 255, 255] },
     didDrawCell: (data) => {
       // Inject photo into the Sample column. Preserve the photo's natural
       // aspect ratio (no rearrange / distortion) — just resize to fit inside
@@ -3065,7 +3181,7 @@ async function qtGeneratePdf(q) {
   pdf.text('TERMS & CONDITIONS', ML, y + 3);
   y += tcLabelH;
 
-  fill([250, 251, 252]); pdf.rect(ML, y, CW, tcBoxH, 'F');
+  // T&C box: white background, just the amber side accent for visual emphasis.
   fill(AMBER); pdf.rect(ML, y, 1.2, tcBoxH, 'F');
 
   let tx = y + tcBoxPad + 2.5;
