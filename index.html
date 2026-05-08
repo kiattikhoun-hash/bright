@@ -588,7 +588,11 @@ function setView(v) {
   render();
   // When entering Quotations, kick off a bridge refresh and re-render with the file tree
   if (v === 'quotations') {
-    Promise.all([qtRefreshFiles(), qtSyncDefaultSigFromBridge()]).then(() => {
+    Promise.all([
+      qtRefreshFiles(),
+      qtSyncDefaultSigFromBridge(),
+      qtPullRecordsFromBridge(),
+    ]).then(() => {
       if (currentView === 'quotations') render();
     });
   }
@@ -2716,11 +2720,18 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
   if (currentView === 'quotations') render();
 }
 
-// Browser-only persistence — keeps the in-memory QUOTATIONS array across reloads
-// without leaving JSON files on disk in the Synology folder.
+// Records persistence: localStorage on each device for fast offline reads,
+// PLUS a shared `_records.json` file in the Synology folder for cross-device
+// visibility. Each save pushes the latest records to the bridge; entering
+// the Quotations view pulls the latest from the bridge.
 const QT_LS_KEY = 'qt_records_v1';
+const QT_RECORDS_PATH = '_records.json';
 function qtPersistRecords() {
   try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
+  // Fire-and-forget push so the UI doesn't block. Last writer wins; for a
+  // small team this is acceptable. Photos are kept in the JSON since they're
+  // the value the user actually edits in the form.
+  qtPushRecordsToBridge();
 }
 function qtLoadRecords() {
   try {
@@ -2736,6 +2747,43 @@ function qtLoadRecords() {
     }
   }
   if (migrated) qtPersistRecords();
+}
+// Cross-device sync helpers. Bridge offline → no-ops, local stays as-is.
+let __qtPushTimer = null;
+function qtPushRecordsToBridge() {
+  // Debounce so a flurry of edits in one second only triggers one push.
+  clearTimeout(__qtPushTimer);
+  __qtPushTimer = setTimeout(async () => {
+    try {
+      const json = JSON.stringify(QUOTATIONS);
+      // UTF-8 safe base64
+      const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+      await qtFetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: QT_RECORDS_PATH, contentBase64: b64 }),
+      });
+    } catch (e) { console.warn('[qt] records push failed', e); }
+  }, 600);
+}
+async function qtPullRecordsFromBridge() {
+  try {
+    const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_RECORDS_PATH));
+    if (!r.ok) return; // file not yet uploaded by any device
+    const remote = await r.json();
+    if (!Array.isArray(remote)) return;
+    // Merge by id, keeping whichever side has the higher updatedAt. Records
+    // present locally but missing on server are dropped (server is the
+    // source of truth — needed so deletes from any device propagate).
+    const byId = {};
+    for (const r of remote) byId[r.id] = r;
+    for (const local of QUOTATIONS) {
+      const srv = byId[local.id];
+      if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byId[local.id] = local;
+    }
+    QUOTATIONS = Object.values(byId);
+    try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
+  } catch (e) { /* offline or invalid JSON; keep local */ }
 }
 
 async function qtDeleteRecord(id) {
