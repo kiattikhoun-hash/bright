@@ -195,7 +195,7 @@ table.tbl tr:hover td{background:#fafbfc}
 .qt-line-row .qt-line-amt{align-self:center;text-align:right;font-weight:600;color:var(--text)}
 .qt-line-row .qt-line-del{background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;align-self:center}
 .qt-line-photo{width:78px;height:78px;border:1.5px dashed var(--border);border-radius:7px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:var(--bg);overflow:hidden;font-size:10.5px;color:var(--text-3);text-align:center;line-height:1.25}
-.qt-line-photo img{width:100%;height:100%;object-fit:cover}
+.qt-line-photo img{width:100%;height:100%;object-fit:contain;background:#fff}
 .qt-doc-types{display:flex;gap:6px;flex-wrap:wrap}
 .qt-doc-types .chip{cursor:pointer}
 @media(max-width:880px){.qt-split{flex-direction:column;height:auto}.qt-pane-left{flex-basis:auto!important;max-height:240px;border-right:0;border-bottom:1px solid var(--border)}.qt-resizer{display:none}.qt-line-row{grid-template-columns:1fr 1fr;gap:8px;padding:10px 0}}
@@ -2063,9 +2063,11 @@ function openQuotationModal(id) {
     </div>
     <div class="field-row">
       <div class="field"><label>Customer</label>
-        <div class="ac-wrap"><input id="q-cust" value="${(q.customer||'').replace(/"/g,'&quot;')}" placeholder="Click or type to search/add…" autocomplete="off" /></div>
+        <div class="ac-wrap"><input id="q-cust" value="${(q.customer||'').replace(/"/g,'&quot;')}" placeholder="Pick from saved folders or type new…" autocomplete="off" /></div>
       </div>
-      <div class="field"><label>Contact Person</label><input id="q-contact" value="${(q.contactPerson||'').replace(/"/g,'&quot;')}" /></div>
+      <div class="field"><label>Contact Person <span style="color:var(--text-3);font-weight:400;">(picks auto-fill customer)</span></label>
+        <div class="ac-wrap"><input id="q-contact" value="${(q.contactPerson||'').replace(/"/g,'&quot;')}" placeholder="Type or pick a saved contact…" autocomplete="off" /></div>
+      </div>
     </div>
     <div class="field-row">
       <div class="field"><label>Address</label><input id="q-addr" value="${(q.address||'').replace(/"/g,'&quot;')}" /></div>
@@ -2154,8 +2156,48 @@ function openQuotationModal(id) {
     qtRefreshTotals();
     qtRenderTerms();
     qtRenderSignature();
-    setupAutocomplete(document.getElementById('q-cust'), () => CUSTOMERS);
+    // Quotation customer dropdown is the list of customer FOLDERS already
+    // present under SynologyDrive-team/Quotation/ — each folder is one
+    // customer. This deliberately diverges from the follow-up CUSTOMERS
+    // master list so the file system is the source of truth here.
+    setupAutocomplete(document.getElementById('q-cust'), () => qtQuotationCustomers());
+    // Contact person dropdown is the list of distinct contacts on previous
+    // quotation records. Picking one auto-fills the customer + contact info
+    // from the most-recent record for that contact.
+    const contactEl = document.getElementById('q-contact');
+    setupAutocomplete(contactEl, () => qtSavedContactPersons());
+    contactEl.addEventListener('change', qtAutofillFromContact);
   }, 30);
+}
+// Customer names = folder names under the Quotation root, surfaced via the
+// bridge. Falls back to records' customer names if the bridge isn't running.
+function qtQuotationCustomers() {
+  const fromFolders = (QUOTATION_FILES || []).map(c => c.name);
+  if (fromFolders.length) return fromFolders.sort((a, b) => a.localeCompare(b));
+  return Array.from(new Set(QUOTATIONS.map(q => q.customer).filter(Boolean))).sort();
+}
+function qtSavedContactPersons() {
+  return Array.from(new Set(QUOTATIONS.map(q => q.contactPerson).filter(Boolean))).sort();
+}
+// When the user selects a saved contact, look up the most-recent record with
+// that contact and copy its customer + address + phones + email into the
+// form. Saves a lot of repeat typing.
+function qtAutofillFromContact() {
+  const contact = document.getElementById('q-contact').value.trim();
+  if (!contact) return;
+  const match = QUOTATIONS
+    .filter(q => (q.contactPerson || '').trim() === contact)
+    .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0))[0];
+  if (!match) return;
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && !el.value.trim() && val) el.value = val; // only fill blanks
+  };
+  set('q-cust',    match.customer);
+  set('q-addr',    match.address);
+  set('q-office',  match.officeNumber);
+  set('q-phone',   match.contactNumber);
+  set('q-email',   match.email);
 }
 
 // ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
@@ -2879,16 +2921,24 @@ async function qtGeneratePdf(q) {
     },
     alternateRowStyles: { fillColor: [248, 250, 252] },
     didDrawCell: (data) => {
-      // Inject photo into the Sample column
+      // Inject photo into the Sample column. Preserve the photo's natural
+      // aspect ratio (no rearrange / distortion) — just resize to fit inside
+      // the cell with letterbox padding.
       if (data.section === 'body' && data.column.index === 1) {
         const it = q.items[data.row.index];
         if (it && it.photoData) {
           try {
             const pad = 1.5;
-            const w = data.cell.width - pad * 2;
-            const h = data.cell.height - pad * 2;
-            pdf.addImage(it.photoData, 'JPEG',
-              data.cell.x + pad, data.cell.y + pad, w, h, undefined, 'FAST');
+            const boxW = data.cell.width  - pad * 2;
+            const boxH = data.cell.height - pad * 2;
+            // Get the image's natural pixel dimensions to compute aspect ratio
+            const props = pdf.getImageProperties(it.photoData);
+            const ratio = props.width / props.height || 1;
+            let drawW = boxW, drawH = boxW / ratio;
+            if (drawH > boxH) { drawH = boxH; drawW = boxH * ratio; }
+            const drawX = data.cell.x + pad + (boxW - drawW) / 2;
+            const drawY = data.cell.y + pad + (boxH - drawH) / 2;
+            pdf.addImage(it.photoData, 'JPEG', drawX, drawY, drawW, drawH, undefined, 'FAST');
           } catch (e) { /* skip bad images */ }
         }
       }
