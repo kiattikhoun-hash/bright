@@ -1742,10 +1742,10 @@ async function qtRefreshFiles() {
 // date suffix doesn't matter if the user changed q.date after generating.
 function qtFindPdf(q, docType) {
   const safeCust = qtSafeFolder(q.customer);
-  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const projName = qtProjectFolderName(q);
   const cust = QUOTATION_FILES.find(c => c.name === safeCust);
   if (!cust) return null;
-  const proj = (cust.projects || []).find(p => p.name === safeProj);
+  const proj = (cust.projects || []).find(p => p.name === projName);
   if (!proj) return null;
   const docNo = (q.docNos && q.docNos[docType]) || q.docNo || '';
   const prefix = docNo + '_' + docType.replace(/\s+/g,'') + '_';
@@ -1755,11 +1755,11 @@ function qtFindPdf(q, docType) {
 // QUOTATION_FILES hasn't been populated yet but we know the file exists.
 function qtBuildPath(q, docType) {
   const safeCust = qtSafeFolder(q.customer);
-  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const projName = qtProjectFolderName(q);
   const safeDoc = docType.replace(/\s+/g,'');
   const docNo = (q.docNos && q.docNos[docType]) || q.docNo || '';
   const filename = `${docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
-  return `${safeCust}/${safeProj}/${filename}`;
+  return `${safeCust}/${projName}/${filename}`;
 }
 // Preview a record's generated PDF by record id + doc type. Resolves the path
 // via QUOTATION_FILES first, falling back to a constructed path if the listing
@@ -2710,6 +2710,16 @@ async function qtDeleteRecord(id) {
 // Strip slashes/control chars so a customer name is safe as a folder name
 function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim() || 'Unassigned'; }
 
+// Project subfolder name = "YYYY-MM-DD <project>" — the date prefix is locked
+// in on the first PDF generation so subsequent re-generations land in the
+// SAME folder. Records that already had PDFs generated before this feature
+// shipped (no q.projectFolderDate) keep their plain "<project>" folder so we
+// don't orphan their existing files.
+function qtProjectFolderName(q) {
+  const safe = qtSafeFolder(q.project || 'Untitled Project');
+  return q.projectFolderDate ? `${q.projectFolderDate} ${safe}` : safe;
+}
+
 // ── Doc-No. helpers ─────────────────────────────────────────────────────────
 // Each doc type gets its own unique Doc No. so a single record can produce
 // four distinct numbered PDFs. Numbers live on q.docNos (object keyed by
@@ -3129,14 +3139,21 @@ async function qtGeneratePdf(q) {
     return;
   }
   const b64 = await blobToBase64(blob);
+  // Lock in the project folder date on the FIRST PDF generation. Subsequent
+  // generations reuse the same dated folder. Records that already had PDFs
+  // generated under the old dateless folder name keep that name (we only
+  // assign a date if the record has never been generated before).
+  if (!q.projectFolderDate && (!q.generated || q.generated.length === 0)) {
+    q.projectFolderDate = q.date || todayISO();
+  }
   const safeCust = qtSafeFolder(q.customer);
-  const safeProj = qtSafeFolder(q.project || 'Untitled Project');
+  const projName = qtProjectFolderName(q);
   const safeDoc  = q.docType.replace(/\s+/g,'');
   const filename = `${qtDocNoFor(q, q.docType)}_${safeDoc}_${q.date || todayISO()}.pdf`;
   const result = await qtFetch('/api/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: `${safeCust}/${safeProj}/${filename}`, contentBase64: b64 }),
+    body: JSON.stringify({ path: `${safeCust}/${projName}/${filename}`, contentBase64: b64 }),
   });
   if (result?.ok) {
     if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
