@@ -1768,10 +1768,6 @@ function qtOpenAtDocType(qId, docType) {
 }
 
 function renderQuotations() {
-  // Group records by customer for the "records" header line
-  const byCust = {};
-  QUOTATIONS.forEach(q => { (byCust[q.customer || 'Unassigned'] = byCust[q.customer || 'Unassigned'] || []).push(q); });
-
   // Always render the full Quotation → Invoice → Delivery Note → Receipt
   // timeline so the row makes the workflow state obvious. Generated docs are
   // bright/clickable-to-preview; not-yet-generated docs are gray/clickable-
@@ -1817,7 +1813,15 @@ function renderQuotations() {
   const filtered = qtFilterDocType
     ? QUOTATIONS.filter(q => (q.generated||[]).includes(qtFilterDocType))
     : QUOTATIONS.slice();
-  const recordRows = filtered.sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
+  // Group records by customer; sort customers alphabetically and records
+  // within each group by most-recently-updated first. A header row per
+  // customer makes scanning the workflow per client much easier.
+  const byCust = {};
+  for (const q of filtered) {
+    const c = q.customer || 'Unassigned';
+    (byCust[c] = byCust[c] || []).push(q);
+  }
+  const renderRow = q => `
     <tr onclick="openQuotationModal('${q.id}')" style="cursor:pointer;">
       <td><strong>${(q.docNos && q.docNos[q.docType]) || q.docNo || '—'}</strong></td>
       <td>${q.customer || '—'}</td>
@@ -1829,8 +1833,19 @@ function renderQuotations() {
         <button onclick="event.stopPropagation();qtDeleteRecord('${q.id}')" title="Delete record"
           style="background:transparent;border:0;color:var(--red);cursor:pointer;font-size:18px;line-height:1;padding:4px 8px;border-radius:6px;">🗑</button>
       </td>
-    </tr>
-  `).join('');
+    </tr>`;
+  const recordRows = Object.keys(byCust).sort((a,b) => a.localeCompare(b)).map(cust => {
+    const rows = byCust[cust]
+      .sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0))
+      .map(renderRow).join('');
+    return `
+      <tr class="qt-cust-head" style="background:#f6f8fb;">
+        <td colspan="7" style="padding:8px 14px;font-weight:700;color:#142a5f;border-top:1.5px solid var(--border);font-size:12.5px;">
+          ${cust} <span style="color:var(--text-3);font-weight:400;">· ${byCust[cust].length} record${byCust[cust].length===1?'':'s'}</span>
+        </td>
+      </tr>
+      ${rows}`;
+  }).join('');
 
   const bridgeStatus = qtBridgeOk
     ? '<span class="qt-bridge-status ok">● Bridge connected</span>'
@@ -2905,13 +2920,13 @@ async function qtGeneratePdf(q) {
   pdf.autoTable({
     startY: y,
     margin: { left: ML, right: MR, top: MT, bottom: MB },
-    head: [['NO.', 'SAMPLE', 'DESCRIPTION', 'QTY', 'UNIT PRICE', lastColLabel]],
+    head: [['NO.', 'PHOTO', 'DESCRIPTION', 'QTY', 'UNIT PRICE', lastColLabel]],
     body: bodyRows,
     styles: { fontSize: 8.5, cellPadding: 2.4, lineColor: [226, 232, 240], lineWidth: 0.15, valign: 'middle' },
     headStyles: { fillColor: NAVY, textColor: 255, fontSize: 7.5, fontStyle: 'bold', halign: 'center', cellPadding: 3 },
     columnStyles: {
       0: { halign: 'center', cellWidth: 13, textColor: MUTE,         fontStyle: 'bold' },
-      1: { halign: 'center', cellWidth: 26, minCellHeight: 22 },
+      1: { halign: 'center', cellWidth: 38, minCellHeight: 26 },
       2: { halign: 'left',   cellWidth: 'auto' },
       3: { halign: 'center', cellWidth: 16, fontStyle: 'bold' },
       4: { halign: 'right',  cellWidth: 26, textColor: [71,85,105] },
@@ -2997,9 +3012,10 @@ async function qtGeneratePdf(q) {
   // Quotation and Delivery Note hide it.
   const showBank = q.docType === 'Invoice' || q.docType === 'Receipt';
   if (showBank && q.bankName) {
-    tcLines.push(`* Bank Name: ${q.bankName}`);
+    const accName = (q.accountName || 'Bright Production and Printing Individual Enterprise').toUpperCase();
+    tcLines.push(`* Bank Name: ${q.bankName} ( ${q.currency || 'LAK'} )`);
     tcLines.push(`* Account No.: ${q.accountNo}`);
-    tcLines.push(`* Account Name: ${q.accountName || 'Bright Production and Printing Individual Enterprise'}`);
+    tcLines.push(`* Account Name: ${accName}`);
   }
   if (q.notes)    tcLines.push('* ' + q.notes);
 
@@ -3064,27 +3080,23 @@ async function qtGeneratePdf(q) {
   pdf.text(q.customer || '—', ML, sigLineY + 7.5);
   pdf.text('BRIGHT PRODUCTION & PRINTING', ML + sigW + 12, sigLineY + 7.5);
 
-  // ── Footer (drawn on every page) ─────────────────────────────────────────
-  // Company address + contact info, plus a thin amber/navy accent strip,
-  // applied AFTER all content is laid out so autotable's auto-pagination
+  // ── Footer (drawn on every page, single line) ────────────────────────────
+  // Compact one-liner: address · tels · email — with a thin accent strip on
+  // top. Applied AFTER content is laid out so autotable's auto-pagination
   // doesn't leave any pages unfooted.
   const totalPages = pdf.internal.getNumberOfPages();
-  const footY = PG_H - MB + 4; // start ~4 mm into the bottom margin
+  const footY = PG_H - MB + 6; // single line baseline
+  const footerLine = 'Thongpong Village, Sikhodtabong District, Vientiane Lao PDR  ·  Tel 020 5559 7992  ·  020 9922 9939  ·  bright.propri@gmail.com';
   for (let p = 1; p <= totalPages; p++) {
     pdf.setPage(p);
     // accent strip
-    fill(AMBER); pdf.rect(ML, footY - 2, CW * 0.35, 0.6, 'F');
-    fill(NAVY);  pdf.rect(ML + CW * 0.35, footY - 2, CW * 0.65, 0.6, 'F');
-    // address line
-    font(7, 'normal', [71, 85, 105]);
-    pdf.text('Thongpong Village, Sikhodtabong District, Vientiane Lao PDR', ML + CW / 2, footY + 1.5, { align: 'center' });
-    // tel + email
-    font(7, 'normal', [100, 116, 139]);
-    pdf.text('Tel 020 5559 7992  ·  020 9922 9939  ·  bright.propri@gmail.com', ML + CW / 2, footY + 5, { align: 'center' });
-    // page number on the right (only show when >1 page)
+    fill(AMBER); pdf.rect(ML, footY - 4, CW * 0.35, 0.6, 'F');
+    fill(NAVY);  pdf.rect(ML + CW * 0.35, footY - 4, CW * 0.65, 0.6, 'F');
+    font(6.5, 'normal', [71, 85, 105]);
+    pdf.text(footerLine, ML + CW / 2, footY, { align: 'center' });
     if (totalPages > 1) {
       font(6, 'normal', [148, 163, 184]);
-      pdf.text(`${p} / ${totalPages}`, ML + CW, footY + 5, { align: 'right' });
+      pdf.text(`${p} / ${totalPages}`, ML + CW, footY, { align: 'right' });
     }
   }
 
