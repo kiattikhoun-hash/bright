@@ -2068,7 +2068,7 @@ function qtBindResizer() {
 }
 
 // ── Quotation form modal ───────────────────────────────────────────────────
-function blankLine() { return { description:'', qty:1, unit:'pcs', unitPrice:0, photoData:'', status:'' }; }
+function blankLine() { return { description:'', qty:1, unit:'pcs', unitPrice:0, photoData:'', status:'Done' }; }
 
 function openQuotationModal(id) {
   const isEdit = !!id;
@@ -2567,7 +2567,7 @@ function qtRenderLines() {
       <input type="number" step="any" value="${it.qty}" oninput="qtUpdateLine(${i},'qty',this.value)" />
       <input type="number" step="any" value="${it.unitPrice}" oninput="qtUpdateLine(${i},'unitPrice',this.value)" />
       <div class="qt-line-amt" id="q-amt-${i}">${qtFmtAmount((+it.qty||0)*(+it.unitPrice||0), q.currency)}</div>
-      <input type="text" value="${(it.status||'').replace(/"/g,'&quot;')}" placeholder="e.g. Delivered" oninput="qtUpdateLine(${i},'status',this.value)" />
+      <input type="text" value="${(it.status||'Done').replace(/"/g,'&quot;')}" placeholder="Done" oninput="qtUpdateLine(${i},'status',this.value)" />
       <button class="qt-line-del" onclick="qtRemoveLine(${i})" title="Remove line">×</button>
     </div>
   `).join('');
@@ -2941,7 +2941,7 @@ async function qtGeneratePdf(q) {
       '',                           // photo cell (drawn in didDrawCell)
       flatDesc(it.description),
       it.qty,
-      qtFmtAmount(it.unitPrice, q.currency),
+      isDN ? '' : qtFmtAmount(it.unitPrice, q.currency),
       isDN ? (it.status || '—') : qtFmtAmount(amt, q.currency),
     ];
   });
@@ -2949,7 +2949,7 @@ async function qtGeneratePdf(q) {
   pdf.autoTable({
     startY: y,
     margin: { left: ML, right: MR, top: MT, bottom: MB },
-    head: [['NO.', 'PHOTO', 'DESCRIPTION', 'QTY', 'UNIT PRICE', lastColLabel]],
+    head: [['NO.', 'PHOTO', 'DESCRIPTION', 'QTY', isDN ? '' : 'UNIT PRICE', lastColLabel]],
     body: bodyRows,
     styles: { fontSize: 8.5, cellPadding: 2.4, lineColor: [226, 232, 240], lineWidth: 0.15, valign: 'middle' },
     headStyles: { fillColor: NAVY, textColor: 255, fontSize: 7.5, fontStyle: 'bold', halign: 'center', cellPadding: 3 },
@@ -2996,34 +2996,38 @@ async function qtGeneratePdf(q) {
   };
 
   // ── 5. Totals (right-aligned with navy Grand Total card) ─────────────────
-  pageBreakIfNeeded(28);
-  const totW = 70;
-  const totX = ML + CW - totW;
-  const t = qtTotals(q);
+  // Delivery Notes track items + status only — no money. Skip the entire
+  // totals block (subtotal / VAT / grand total) so the doc stays clean.
+  if (q.docType !== 'Delivery Note') {
+    pageBreakIfNeeded(28);
+    const totW = 70;
+    const totX = ML + CW - totW;
+    const t = qtTotals(q);
 
-  font(8.5, 'normal', [71, 85, 105]);
-  pdf.text('Subtotal', totX + 2, y + 3.5);
-  font(8.5, 'bold', TEXT);
-  pdf.text(qtFmtAmount(t.sub, q.currency), totX + totW - 2, y + 3.5, { align: 'right' });
+    font(8.5, 'normal', [71, 85, 105]);
+    pdf.text('Subtotal', totX + 2, y + 3.5);
+    font(8.5, 'bold', TEXT);
+    pdf.text(qtFmtAmount(t.sub, q.currency), totX + totW - 2, y + 3.5, { align: 'right' });
 
-  stroke([226, 232, 240]);
-  pdf.setLineWidth(0.15);
-  pdf.line(totX, y + 6, totX + totW, y + 6);
+    stroke([226, 232, 240]);
+    pdf.setLineWidth(0.15);
+    pdf.line(totX, y + 6, totX + totW, y + 6);
 
-  font(8.5, 'normal', [71, 85, 105]);
-  pdf.text(`VAT (${q.vatRate}%)`, totX + 2, y + 9.5);
-  font(8.5, 'bold', TEXT);
-  pdf.text(qtFmtAmount(t.vat, q.currency), totX + totW - 2, y + 9.5, { align: 'right' });
+    font(8.5, 'normal', [71, 85, 105]);
+    pdf.text(`VAT (${q.vatRate}%)`, totX + 2, y + 9.5);
+    font(8.5, 'bold', TEXT);
+    pdf.text(qtFmtAmount(t.vat, q.currency), totX + totW - 2, y + 9.5, { align: 'right' });
 
-  fill(NAVY); pdf.roundedRect(totX, y + 13, totW, 13, 2, 2, 'F');
-  font(5.5, 'bold', MUTE);
-  pdf.text('GRAND TOTAL', totX + 3, y + 17.5);
-  font(6, 'normal', [203, 213, 225]);
-  pdf.text(q.currency, totX + 3, y + 21);
-  font(13, 'bold', [255,255,255]);
-  pdf.text(qtFmtAmount(t.grand, q.currency), totX + totW - 3, y + 21, { align: 'right' });
+    fill(NAVY); pdf.roundedRect(totX, y + 13, totW, 13, 2, 2, 'F');
+    font(5.5, 'bold', MUTE);
+    pdf.text('GRAND TOTAL', totX + 3, y + 17.5);
+    font(6, 'normal', [203, 213, 225]);
+    pdf.text(q.currency, totX + 3, y + 21);
+    font(13, 'bold', [255,255,255]);
+    pdf.text(qtFmtAmount(t.grand, q.currency), totX + totW - 3, y + 21, { align: 'right' });
 
-  y += 30;
+    y += 30;
+  }
 
   // ── 6. Terms & conditions ────────────────────────────────────────────────
   // Use the user's selected T&C lines if present (editable multi-select in
