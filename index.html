@@ -1687,6 +1687,7 @@ const QT_TERMS = {
 let qtBridgeOk = false;
 let qtPaneCollapsed = false;
 let qtSelectedFile = null; // {customer, file} for preview
+let qtFilterDocType = null; // null = show all, otherwise one of QT_DOC_TYPES
 
 function quotationFileCount() {
   return QUOTATION_FILES.reduce((n, c) => {
@@ -1792,7 +1793,31 @@ function renderQuotations() {
     }).join(' ');
   };
 
-  const recordRows = QUOTATIONS.slice().sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
+  // Filter chips: "All / Quotation / Invoice / Delivery Note / Receipt".
+  // Filtering by a doc type only keeps records that have generated that type.
+  // Counts shown on each chip make it easy to see workflow distribution.
+  const docTypeCounts = {
+    all: QUOTATIONS.length,
+    Quotation: QUOTATIONS.filter(q => (q.generated||[]).includes('Quotation')).length,
+    Invoice: QUOTATIONS.filter(q => (q.generated||[]).includes('Invoice')).length,
+    'Delivery Note': QUOTATIONS.filter(q => (q.generated||[]).includes('Delivery Note')).length,
+    Receipt: QUOTATIONS.filter(q => (q.generated||[]).includes('Receipt')).length,
+  };
+  const SHORT_FILTER = { 'Quotation':'Quote', 'Invoice':'Invoice', 'Delivery Note':'Delivery', 'Receipt':'Receipt' };
+  const chip = (label, val, count) => {
+    const isActive = (qtFilterDocType || null) === val;
+    return `<span class="chip ${isActive?'active':''}" onclick="qtSetFilter(${val===null?'null':`'${val}'`})" style="cursor:pointer;">${label} <span style="opacity:.6;font-weight:400;">·&nbsp;${count}</span></span>`;
+  };
+  const filterChips = `
+    <div style="display:flex;flex-wrap:wrap;gap:6px;padding:0 14px 10px;">
+      ${chip('All', null, docTypeCounts.all)}
+      ${QT_DOC_TYPES.map(t => chip(SHORT_FILTER[t]||t, t, docTypeCounts[t])).join('')}
+    </div>`;
+
+  const filtered = qtFilterDocType
+    ? QUOTATIONS.filter(q => (q.generated||[]).includes(qtFilterDocType))
+    : QUOTATIONS.slice();
+  const recordRows = filtered.sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
     <tr onclick="openQuotationModal('${q.id}')" style="cursor:pointer;">
       <td><strong>${(q.docNos && q.docNos[q.docType]) || q.docNo || '—'}</strong></td>
       <td>${q.customer || '—'}</td>
@@ -1835,9 +1860,10 @@ function renderQuotations() {
           <button class="btn" onclick="qtReloadFiles()">↻ Refresh files</button>
         </div>
       </div>
+      ${filterChips}
       <div class="panel-body tight"><div class="tbl-wrap"><table class="tbl">
         <thead><tr><th>Doc No.</th><th>Customer</th><th>Project</th><th>Date</th><th style="text-align:right;">Grand Total</th><th>Generated</th><th></th></tr></thead>
-        <tbody>${recordRows || '<tr><td colspan="7" class="empty">No quotations yet — click "+ New Quotation" to create one.</td></tr>'}</tbody>
+        <tbody>${recordRows || `<tr><td colspan="7" class="empty">${qtFilterDocType ? `No records with a generated ${qtFilterDocType} yet.` : 'No quotations yet — click "+ New Quotation" to create one.'}</td></tr>`}</tbody>
       </table></div></div>
     </div>
   `;
@@ -1935,6 +1961,10 @@ function qtShowInPanel(path, name) {
 }
 function qtClosePreview() {
   qtSelectedFile = null;
+  if (currentView === 'quotations') render();
+}
+function qtSetFilter(docType) {
+  qtFilterDocType = docType; // null = all
   if (currentView === 'quotations') render();
 }
 
