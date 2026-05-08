@@ -1727,7 +1727,8 @@ function qtFindPdf(q, docType) {
   if (!cust) return null;
   const proj = (cust.projects || []).find(p => p.name === safeProj);
   if (!proj) return null;
-  const prefix = q.docNo + '_' + docType.replace(/\s+/g,'') + '_';
+  const docNo = (q.docNos && q.docNos[docType]) || q.docNo || '';
+  const prefix = docNo + '_' + docType.replace(/\s+/g,'') + '_';
   return (proj.files || []).find(f => f.name.startsWith(prefix)) || null;
 }
 // Build the same path qtGeneratePdf would write to. Used as a fallback when
@@ -1736,7 +1737,8 @@ function qtBuildPath(q, docType) {
   const safeCust = qtSafeFolder(q.customer);
   const safeProj = qtSafeFolder(q.project || 'Untitled Project');
   const safeDoc = docType.replace(/\s+/g,'');
-  const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
+  const docNo = (q.docNos && q.docNos[docType]) || q.docNo || '';
+  const filename = `${docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
   return `${safeCust}/${safeProj}/${filename}`;
 }
 // Preview a record's generated PDF by record id + doc type. Resolves the path
@@ -1792,7 +1794,7 @@ function renderQuotations() {
 
   const recordRows = QUOTATIONS.slice().sort((a,b) => (b.updatedAt||0) - (a.updatedAt||0)).map(q => `
     <tr onclick="openQuotationModal('${q.id}')" style="cursor:pointer;">
-      <td><strong>${q.docNo || '—'}</strong></td>
+      <td><strong>${(q.docNos && q.docNos[q.docType]) || q.docNo || '—'}</strong></td>
       <td>${q.customer || '—'}</td>
       <td>${q.project || '—'}</td>
       <td>${q.date || '—'}</td>
@@ -2009,7 +2011,7 @@ function openQuotationModal(id) {
   const q = isEdit ? JSON.parse(JSON.stringify(QUOTATIONS.find(x => x.id === id))) : {
     id: 'qt_' + Date.now().toString(36),
     docType: 'Quotation',
-    docNo: 'BR-' + new Date().toISOString().slice(0,10).replace(/-/g,'') + '-' + Math.floor(Math.random()*900+100),
+    docNos: { Quotation: qtNewDocNo('Quotation') },
     customer: '', address: '', officeNumber: '', contactPerson: '', contactNumber: '', email: '',
     project: '',
     date: todayISO(), validUntil: qtAddDays(todayISO(), 15),
@@ -2021,10 +2023,12 @@ function openQuotationModal(id) {
     generated: [], // ['Quotation','Invoice'...] tracks which PDFs have been written
     updatedAt: Date.now(),
   };
-  document.getElementById('modal-title').textContent = isEdit ? `Edit · ${q.docNo}` : 'New Quotation';
+  // Ensure the active doc type has a doc no. (lazy-generates if missing)
+  const initialDocNo = qtDocNoFor(q, q.docType);
+  document.getElementById('modal-title').textContent = isEdit ? `Edit · ${initialDocNo}` : 'New Quotation';
   document.getElementById('modal-body').innerHTML = `
     <div class="field-row">
-      <div class="field"><label>Doc No.</label><input id="q-no" value="${q.docNo}" /></div>
+      <div class="field"><label>Doc No. <span style="color:var(--text-3);font-weight:400;">(unique per doc type)</span></label><input id="q-no" value="${initialDocNo}" oninput="qtUpdateDocNo(this.value)" /></div>
       <div class="field"><label>Project</label><input id="q-proj" value="${(q.project||'').replace(/"/g,'&quot;')}" /></div>
     </div>
     <div class="field-row">
@@ -2386,11 +2390,27 @@ function qtPickDocType(el, d) {
   el.parentElement.querySelectorAll('.chip').forEach(c => c.classList.remove('active'));
   el.classList.add('active');
   const q = qtCurrentRecord();
+  // Persist any currently-typed doc number into the OUTGOING doc type before
+  // switching, so the user's edit isn't lost.
+  const docNoInput = document.getElementById('q-no');
+  if (docNoInput && q.docType) {
+    if (!q.docNos) q.docNos = {};
+    q.docNos[q.docType] = docNoInput.value.trim();
+  }
   q.docType = d;
   // Reset T&C selections to the new doc type's defaults
   q.terms = (QT_TERMS[d] || []).slice();
+  // Show the doc number for the newly selected type (lazy-generate if missing)
+  const newNo = qtDocNoFor(q, d);
+  if (docNoInput) docNoInput.value = newNo;
   qtSetCurrentRecord(q);
   qtRenderTerms();
+}
+function qtUpdateDocNo(val) {
+  const q = qtCurrentRecord();
+  if (!q.docNos) q.docNos = {};
+  q.docNos[q.docType] = val;
+  qtSetCurrentRecord(q);
 }
 function qtBankPicked() {
   const sel = document.getElementById('q-bank');
@@ -2487,7 +2507,10 @@ function qtFmtBytes(n) {
 // Read all form values back into the working record before save / PDF
 function qtReadFormIntoRecord() {
   const q = qtCurrentRecord();
-  q.docNo         = document.getElementById('q-no').value.trim();
+  // Per-doc-type doc numbers — write the current input into q.docNos[q.docType]
+  if (!q.docNos) q.docNos = {};
+  q.docNos[q.docType] = document.getElementById('q-no').value.trim();
+  delete q.docNo; // drop legacy single field once migrated
   q.project       = document.getElementById('q-proj').value.trim();
   q.customer      = document.getElementById('q-cust').value.trim();
   q.contactPerson = document.getElementById('q-contact').value.trim();
@@ -2510,7 +2533,7 @@ function qtReadFormIntoRecord() {
 async function qtSaveRecord(id, isEdit, generatePdf) {
   const q = qtReadFormIntoRecord();
   if (!q.customer) { showToast('Customer is required'); return; }
-  if (!q.docNo)    { showToast('Doc No. is required'); return; }
+  if (!q.docNos[q.docType]) { showToast('Doc No. is required'); return; }
   if (generatePdf && !q.project) { showToast('Project is required for the folder name'); return; }
 
   // Persist in-memory record (and to localStorage so it survives page reload — the
@@ -2580,6 +2603,27 @@ async function qtDeleteRecord(id) {
 
 // Strip slashes/control chars so a customer name is safe as a folder name
 function qtSafeFolder(s) { return (s || 'Unassigned').replace(/[\\/:*?"<>|\x00-\x1f]/g, '_').trim() || 'Unassigned'; }
+
+// ── Doc-No. helpers ─────────────────────────────────────────────────────────
+// Each doc type gets its own unique Doc No. so a single record can produce
+// four distinct numbered PDFs. Numbers live on q.docNos (object keyed by
+// doc type). Legacy records had a single q.docNo string — migrated lazily.
+const QT_DOC_CODE = { 'Quotation':'Q', 'Invoice':'INV', 'Delivery Note':'DN', 'Receipt':'RCT' };
+function qtNewDocNo(docType) {
+  const code = QT_DOC_CODE[docType] || 'X';
+  const date = new Date().toISOString().slice(0,10).replace(/-/g,'');
+  const n = Math.floor(Math.random() * 900 + 100);
+  return `BR-${code}-${date}-${n}`;
+}
+function qtDocNoFor(q, docType) {
+  if (!q.docNos) q.docNos = {};
+  // Adopt legacy q.docNo into the map under the record's current doc type
+  if (q.docNo && !q.docNos[q.docType || 'Quotation']) {
+    q.docNos[q.docType || 'Quotation'] = q.docNo;
+  }
+  if (!q.docNos[docType]) q.docNos[docType] = qtNewDocNo(docType);
+  return q.docNos[docType];
+}
 
 // Add `n` calendar days to a YYYY-MM-DD ISO string and return YYYY-MM-DD.
 function qtAddDays(iso, n) {
@@ -2708,7 +2752,7 @@ async function qtGeneratePdf(q) {
     { label: 'DATE', value: niceDt(q.date), inverted: false },
   ];
   if (q.validUntil) meta.push({ label: 'VALID UNTIL', value: niceDt(q.validUntil), inverted: false });
-  meta.push({ label: 'DOC NO.', value: q.docNo, inverted: true });
+  meta.push({ label: 'DOC NO.', value: qtDocNoFor(q, q.docType), inverted: true });
 
   let cx = ML + CW;
   for (let i = meta.length - 1; i >= 0; i--) {
@@ -2977,7 +3021,7 @@ async function qtGeneratePdf(q) {
   const safeCust = qtSafeFolder(q.customer);
   const safeProj = qtSafeFolder(q.project || 'Untitled Project');
   const safeDoc  = q.docType.replace(/\s+/g,'');
-  const filename = `${q.docNo}_${safeDoc}_${q.date || todayISO()}.pdf`;
+  const filename = `${qtDocNoFor(q, q.docType)}_${safeDoc}_${q.date || todayISO()}.pdf`;
   const result = await qtFetch('/api/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -3117,7 +3161,7 @@ function qtBuildDocHtml(q) {
           </div>` : ''}
           <div style="background:#142a5f;color:#fff;border-radius:7px;padding:6px 10px;min-width:78px;">
             <div style="font-size:8px;font-weight:700;letter-spacing:.1em;color:#94a3b8;text-transform:uppercase;">Doc No.</div>
-            <div style="font-size:10.5px;font-weight:700;color:#fff;margin-top:1px;white-space:nowrap;">${esc(q.docNo)}</div>
+            <div style="font-size:10.5px;font-weight:700;color:#fff;margin-top:1px;white-space:nowrap;">${esc((q.docNos && q.docNos[q.docType]) || q.docNo || '')}</div>
           </div>
         </div>
       </div>
