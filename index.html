@@ -1652,7 +1652,13 @@ function renderTeam() {
    all generate from the same JSON record. PDFs are written to the local
    bridge (which writes to the synced Synology Drive folder).
 */
-const QT_BRIDGE = 'http://127.0.0.1:7860';
+// The web app tries each of these URLs in order until one responds. This
+// covers the common cause of "Bridge offline" on Windows where the browser
+// fails to resolve 127.0.0.1 due to a hosts-file quirk but `localhost` works
+// (or vice versa). The first URL that succeeds is sticky for the session.
+const QT_BRIDGE_CANDIDATES = ['http://127.0.0.1:7860', 'http://localhost:7860'];
+let QT_BRIDGE = QT_BRIDGE_CANDIDATES[0];
+let qtBridgeError = ''; // last error message, surfaced in the status pill
 const QT_DOC_TYPES = ['Quotation','Invoice','Delivery Note','Receipt'];
 const QT_BANKS = [
   { name:'BCEL',   acc:'0101100083435' },
@@ -1698,17 +1704,30 @@ function quotationFileCount() {
 }
 
 // Talk to the local bridge. Returns null + sets qtBridgeOk=false on connection failure.
+// Tries 127.0.0.1, then localhost — covers Windows hosts-file weirdness where
+// one alias resolves and the other doesn't. The first URL that responds wins
+// for the session.
 async function qtFetch(path, opts = {}) {
-  try {
-    const r = await fetch(QT_BRIDGE + path, opts);
-    qtBridgeOk = true;
-    if (!r.ok) throw new Error(await r.text());
-    const ct = r.headers.get('content-type') || '';
-    return ct.includes('json') ? r.json() : r.text();
-  } catch (e) {
-    qtBridgeOk = false;
-    return null;
+  for (const base of QT_BRIDGE_CANDIDATES) {
+    try {
+      const r = await fetch(base + path, opts);
+      if (!r.ok) {
+        const txt = await r.text().catch(() => '');
+        throw new Error(`HTTP ${r.status}${txt?': '+txt:''}`);
+      }
+      QT_BRIDGE = base;       // sticky once we find a working URL
+      qtBridgeOk = true;
+      qtBridgeError = '';
+      const ct = r.headers.get('content-type') || '';
+      return ct.includes('json') ? r.json() : r.text();
+    } catch (e) {
+      qtBridgeError = `${base} → ${e.message}`;
+      console.warn('[qt] bridge fetch failed', qtBridgeError);
+      // try the next candidate
+    }
   }
+  qtBridgeOk = false;
+  return null;
 }
 
 async function qtRefreshFiles() {
@@ -1848,8 +1867,8 @@ function renderQuotations() {
   }).join('');
 
   const bridgeStatus = qtBridgeOk
-    ? '<span class="qt-bridge-status ok">● Bridge connected</span>'
-    : '<span class="qt-bridge-status err">● Bridge offline</span>';
+    ? `<span class="qt-bridge-status ok" title="${QT_BRIDGE}">● Bridge connected (${QT_BRIDGE.replace('http://','')})</span>`
+    : `<span class="qt-bridge-status err" title="${(qtBridgeError||'').replace(/"/g,'&quot;')}">● Bridge offline${qtBridgeError ? ' — '+qtBridgeError.replace(/^https?:\/\//,'').slice(0,80) : ''} <a href="http://127.0.0.1:7860/api/health" target="_blank" style="color:inherit;text-decoration:underline;margin-left:6px;">test ↗</a></span>`;
 
   const displayPanel = qtSelectedFile ? `
     <div class="panel" style="margin-bottom:14px;">
