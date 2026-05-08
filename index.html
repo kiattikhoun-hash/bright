@@ -592,6 +592,7 @@ function setView(v) {
       qtRefreshFiles(),
       qtSyncDefaultSigFromBridge(),
       qtPullRecordsFromBridge(),
+      qtPullCustomerProfilesFromBridge(),
     ]).then(() => {
       if (currentView === 'quotations') render();
     });
@@ -2205,7 +2206,12 @@ function openQuotationModal(id) {
     // present under SynologyDrive-team/Quotation/ — each folder is one
     // customer. This deliberately diverges from the follow-up CUSTOMERS
     // master list so the file system is the source of truth here.
-    setupAutocomplete(document.getElementById('q-cust'), () => qtQuotationCustomers());
+    const custEl = document.getElementById('q-cust');
+    setupAutocomplete(custEl, () => qtQuotationCustomers());
+    // When the customer is picked/typed, autofill blanks from the shared
+    // customer profile DB. Lets the user fill out a customer once and
+    // never re-type the address / phones / email again.
+    custEl.addEventListener('change', qtAutofillFromCustomer);
     // Contact person dropdown is the list of distinct contacts on previous
     // quotation records. Picking one auto-fills the customer + contact info
     // from the most-recent record for that contact.
@@ -2243,6 +2249,24 @@ function qtAutofillFromContact() {
   set('q-office',  match.officeNumber);
   set('q-phone',   match.contactNumber);
   set('q-email',   match.email);
+}
+// When the user picks a customer name, look up that customer's profile in
+// the shared DB and autofill any blank contact fields. Profile is built up
+// over time from every quotation save, so it's reliable across devices.
+function qtAutofillFromCustomer() {
+  const name = document.getElementById('q-cust').value.trim();
+  if (!name) return;
+  const prof = qtFindCustomerProfile(name);
+  if (!prof) return;
+  const set = (id, val) => {
+    const el = document.getElementById(id);
+    if (el && !el.value.trim() && val) el.value = val;
+  };
+  set('q-contact', prof.contactPerson);
+  set('q-addr',    prof.address);
+  set('q-office',  prof.officeNumber);
+  set('q-phone',   prof.contactNumber);
+  set('q-email',   prof.email);
 }
 
 // ── Signature: file upload → base64 → drawn above PREPARED BY in PDF ───────
@@ -2694,6 +2718,9 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
     QUOTATIONS.push(q);
   }
   qtPersistRecords();
+  // Upsert this customer's contact details into the shared profile DB so
+  // every other form on every device can autofill them by name.
+  qtUpsertCustomerProfile(q);
 
   let pdfOk = !generatePdf; // success unless we tried to generate
   let savedPath = null;
@@ -2726,6 +2753,13 @@ async function qtSaveRecord(id, isEdit, generatePdf) {
 // the Quotations view pulls the latest from the bridge.
 const QT_LS_KEY = 'qt_records_v1';
 const QT_RECORDS_PATH = '_records.json';
+// Customer profile DB: { name, contactPerson, address, officeNumber,
+// contactNumber, email, updatedAt }. Indexed by customer name. Synced to a
+// shared `_customers.json` file in the Synology folder so every form on
+// every device can autofill a customer's details by just picking the name.
+const QT_CUSTOMERS_LS = 'qt_customers_v1';
+const QT_CUSTOMERS_PATH = '_customers.json';
+let QT_CUSTOMER_PROFILES = [];
 function qtPersistRecords() {
   try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
   // Fire-and-forget push so the UI doesn't block. Last writer wins; for a
@@ -2784,6 +2818,76 @@ async function qtPullRecordsFromBridge() {
     QUOTATIONS = Object.values(byId);
     try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
   } catch (e) { /* offline or invalid JSON; keep local */ }
+}
+
+// ── Customer profile DB ───────────────────────────────────────────────────
+function qtLoadCustomerProfiles() {
+  try {
+    const raw = localStorage.getItem(QT_CUSTOMERS_LS);
+    QT_CUSTOMER_PROFILES = raw ? (JSON.parse(raw) || []) : [];
+  } catch (e) { QT_CUSTOMER_PROFILES = []; }
+}
+function qtPersistCustomerProfiles() {
+  try { localStorage.setItem(QT_CUSTOMERS_LS, JSON.stringify(QT_CUSTOMER_PROFILES)); } catch(e) {}
+  qtPushCustomerProfilesToBridge();
+}
+let __qtCustPushTimer = null;
+function qtPushCustomerProfilesToBridge() {
+  clearTimeout(__qtCustPushTimer);
+  __qtCustPushTimer = setTimeout(async () => {
+    try {
+      const json = JSON.stringify(QT_CUSTOMER_PROFILES);
+      const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
+      await qtFetch('/api/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: QT_CUSTOMERS_PATH, contentBase64: b64 }),
+      });
+    } catch (e) { console.warn('[qt] customers push failed', e); }
+  }, 600);
+}
+async function qtPullCustomerProfilesFromBridge() {
+  try {
+    const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_CUSTOMERS_PATH));
+    if (!r.ok) return;
+    const remote = await r.json();
+    if (!Array.isArray(remote)) return;
+    // Merge by name, newer updatedAt wins
+    const byName = {};
+    for (const p of remote) if (p && p.name) byName[p.name] = p;
+    for (const local of QT_CUSTOMER_PROFILES) {
+      const srv = byName[local.name];
+      if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byName[local.name] = local;
+      else if (!srv) byName[local.name] = local;
+    }
+    QT_CUSTOMER_PROFILES = Object.values(byName);
+    try { localStorage.setItem(QT_CUSTOMERS_LS, JSON.stringify(QT_CUSTOMER_PROFILES)); } catch(e) {}
+  } catch (e) { /* offline / no file yet */ }
+}
+// Look up a stored profile by exact customer name. Returns null if missing.
+function qtFindCustomerProfile(name) {
+  const n = (name || '').trim();
+  if (!n) return null;
+  return QT_CUSTOMER_PROFILES.find(p => (p.name || '').trim() === n) || null;
+}
+// Upsert a customer's contact details from a quotation record. Skips fields
+// the user left blank so we don't overwrite a richer existing profile.
+function qtUpsertCustomerProfile(q) {
+  const name = (q.customer || '').trim();
+  if (!name) return;
+  let prof = qtFindCustomerProfile(name);
+  if (!prof) {
+    prof = { name };
+    QT_CUSTOMER_PROFILES.push(prof);
+  }
+  const set = (k, v) => { if ((v || '').trim()) prof[k] = v.trim(); };
+  set('contactPerson', q.contactPerson);
+  set('address',       q.address);
+  set('officeNumber',  q.officeNumber);
+  set('contactNumber', q.contactNumber);
+  set('email',         q.email);
+  prof.updatedAt = Date.now();
+  qtPersistCustomerProfiles();
 }
 
 async function qtDeleteRecord(id) {
@@ -3975,6 +4079,7 @@ document.getElementById('search-input').addEventListener('input', e => { const q
 (async () => {
   await loadAll();
   qtLoadRecords();
+  qtLoadCustomerProfiles();
   bindNav();
   setView('tasks');
   // Realtime subscriptions for multi-device sync
