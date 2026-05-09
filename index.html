@@ -1716,6 +1716,80 @@ let qtPaneCollapsed = false;
 let qtSelectedFile = null; // {customer, file} for preview
 let qtFilterDocType = null; // null = show all, otherwise one of QT_DOC_TYPES
 
+// ── Supabase backend (primary when no bridge is reachable) ──────────────
+// When the page is hosted on a public URL (GitHub Pages, Vercel, etc.) the
+// local Node bridge is unreachable. We fall through to Supabase: PDFs go to
+// the `quotations` storage bucket, records go to the `qt_records` table,
+// customer profiles to `qt_customer_profiles`, settings (default signature)
+// to `qt_settings`. Run supabase-setup.sql in your Supabase project once
+// to create these.
+const QT_SUPA_BUCKET = 'quotations';
+function qtSupaPublicUrl(path) {
+  if (!USE_SUPABASE) return null;
+  return supa.storage.from(QT_SUPA_BUCKET).getPublicUrl(path).data.publicUrl;
+}
+async function qtSupaSavePdf(path, blob) {
+  if (!USE_SUPABASE) return null;
+  const { error } = await supa.storage.from(QT_SUPA_BUCKET).upload(path, blob, {
+    contentType: 'application/pdf', upsert: true,
+  });
+  if (error) { console.error('[qt-cloud] PDF upload failed', error); return null; }
+  return path;
+}
+async function qtSupaSaveJson(path, obj) {
+  if (!USE_SUPABASE) return null;
+  const blob = new Blob([JSON.stringify(obj)], { type: 'application/json' });
+  const { error } = await supa.storage.from(QT_SUPA_BUCKET).upload(path, blob, {
+    contentType: 'application/json', upsert: true,
+  });
+  if (error) { console.error('[qt-cloud] JSON upload failed', error); return null; }
+  return path;
+}
+async function qtSupaSaveBinary(path, base64, contentType) {
+  if (!USE_SUPABASE) return null;
+  const bin = atob(base64);
+  const arr = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+  const blob = new Blob([arr], { type: contentType || 'application/octet-stream' });
+  const { error } = await supa.storage.from(QT_SUPA_BUCKET).upload(path, blob, {
+    contentType: contentType || 'application/octet-stream', upsert: true,
+  });
+  if (error) { console.error('[qt-cloud] binary upload failed', error); return null; }
+  return path;
+}
+async function qtSupaListFiles() {
+  // Walk the storage bucket and reconstruct customer → project → files.
+  if (!USE_SUPABASE) return [];
+  const customers = [];
+  const { data: top } = await supa.storage.from(QT_SUPA_BUCKET).list('', { limit: 1000 });
+  for (const c of (top || [])) {
+    if (c.name.startsWith('_') || !c.id === null) continue; // skip files at root
+    if (c.id !== null) continue; // c.id null = folder
+  }
+  // The API uses `id===null` to indicate a folder. Re-query properly:
+  for (const c of (top || [])) {
+    if (c.name.startsWith('_')) continue;
+    // Folders have id === null in Supabase storage list output
+    if (c.id !== null) continue;
+    const projects = [];
+    const { data: projs } = await supa.storage.from(QT_SUPA_BUCKET).list(c.name, { limit: 1000 });
+    for (const p of (projs || [])) {
+      if (p.id !== null) continue;
+      const { data: files } = await supa.storage.from(QT_SUPA_BUCKET).list(`${c.name}/${p.name}`, { limit: 1000 });
+      const projFiles = (files || []).filter(f => f.id !== null && /\.pdf$/i.test(f.name)).map(f => ({
+        name: f.name,
+        path: `${c.name}/${p.name}/${f.name}`,
+        size: f.metadata?.size || 0,
+        mtime: new Date(f.updated_at || f.created_at || Date.now()).getTime(),
+        type: 'pdf',
+      }));
+      if (projFiles.length) projects.push({ name: p.name, files: projFiles });
+    }
+    customers.push({ name: c.name, files: [], projects });
+  }
+  return customers;
+}
+
 function quotationFileCount() {
   return QUOTATION_FILES.reduce((n, c) => {
     let count = (c.files || []).length;
@@ -1753,8 +1827,17 @@ async function qtFetch(path, opts = {}) {
 
 async function qtRefreshFiles() {
   const data = await qtFetch('/api/list');
-  QUOTATION_FILES = data?.customers || [];
-  return data;
+  if (data?.customers) {
+    QUOTATION_FILES = data.customers;
+    return data;
+  }
+  // Bridge offline — fall back to listing the Supabase Storage bucket.
+  if (USE_SUPABASE) {
+    QUOTATION_FILES = await qtSupaListFiles();
+    return { customers: QUOTATION_FILES };
+  }
+  QUOTATION_FILES = [];
+  return null;
 }
 
 // Find the saved PDF for a given record + doc type in the QUOTATION_FILES tree.
@@ -1968,6 +2051,14 @@ async function qtOpenPdfModal(path, name) {
   }
 }
 
+// Resolve a stored PDF path to a URL we can fetch. Bridge first, Supabase
+// public URL second.
+function qtResolvePdfUrl(path) {
+  if (qtBridgeOk) return QT_BRIDGE + '/api/file?path=' + encodeURIComponent(path);
+  if (USE_SUPABASE) return qtSupaPublicUrl(path);
+  return null;
+}
+
 // Render a PDF into the right pane via pdf.js. Each page is drawn to a canvas
 // at a high INTERNAL resolution (sharp on retina) and then scaled down to the
 // pane width via CSS `width:100%`. This sidesteps any pane-measurement bugs
@@ -1977,7 +2068,7 @@ async function qtRenderPdf() {
   if (!host || !qtSelectedFile) return;
   if (!window.pdfjsLib) { host.innerHTML = '<div class="qt-pdf-loading">PDF renderer not loaded — check internet.</div>'; return; }
   try {
-    const url = QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path);
+    const url = qtResolvePdfUrl(qtSelectedFile.path) || (QT_BRIDGE + '/api/file?path=' + encodeURIComponent(qtSelectedFile.path));
     const pdf = await pdfjsLib.getDocument({ url }).promise;
     host.innerHTML = '';
     const RENDER_SCALE = 2; // high-res bitmap; CSS scales display to 100% pane width
@@ -2296,34 +2387,53 @@ async function qtSetDefaultSig(d) {
   try { localStorage.setItem(QT_DEFAULT_SIG_KEY, d); } catch(e) {}
   if (!d) return;
   const b64 = d.includes(',') ? d.split(',')[1] : d;
-  // Upload to the shared folder so other devices syncing the same Synology
-  // share pick it up automatically. Best-effort: silently fail if offline.
-  await qtFetch('/api/save', {
+  // Try the bridge first
+  const ok = await qtFetch('/api/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ path: QT_DEFAULT_SIG_PATH, contentBase64: b64 }),
   });
+  if (ok?.ok) return;
+  // Fall back to Supabase qt_settings
+  if (!USE_SUPABASE) return;
+  try {
+    await supa.from('qt_settings').upsert({
+      key: 'default_signature', value: d, updated_at: new Date().toISOString(),
+    }, { onConflict: 'key' });
+  } catch (e) { console.warn('[qt] supabase sig push failed', e); }
 }
 async function qtClearDefaultSig() {
   try { localStorage.removeItem(QT_DEFAULT_SIG_KEY); } catch(e) {}
   await qtFetch('/api/delete?path=' + encodeURIComponent(QT_DEFAULT_SIG_PATH), { method: 'DELETE' });
+  if (USE_SUPABASE) {
+    try { await supa.from('qt_settings').delete().eq('key', 'default_signature'); }
+    catch (e) { /* best effort */ }
+  }
 }
-// Pull the default signature from the shared folder into the local cache.
-// Called when the user enters the Quotations view, so each device picks up
-// any new default that another device uploaded.
+// Pull the default signature from the shared folder OR Supabase into the
+// local cache. Called when the user enters the Quotations view.
 async function qtSyncDefaultSigFromBridge() {
+  // Try the bridge first
   try {
     const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_DEFAULT_SIG_PATH));
-    if (!r.ok) return;
-    const blob = await r.blob();
-    const dataUrl = await new Promise((resolve, reject) => {
-      const fr = new FileReader();
-      fr.onload = () => resolve(fr.result);
-      fr.onerror = reject;
-      fr.readAsDataURL(blob);
-    });
-    localStorage.setItem(QT_DEFAULT_SIG_KEY, dataUrl);
-  } catch (e) { /* bridge offline or no default uploaded yet — keep cache */ }
+    if (r.ok) {
+      const blob = await r.blob();
+      const dataUrl = await new Promise((resolve, reject) => {
+        const fr = new FileReader();
+        fr.onload = () => resolve(fr.result);
+        fr.onerror = reject;
+        fr.readAsDataURL(blob);
+      });
+      localStorage.setItem(QT_DEFAULT_SIG_KEY, dataUrl);
+      return;
+    }
+  } catch (e) { /* fall through */ }
+  // Fall back to Supabase
+  if (!USE_SUPABASE) return;
+  try {
+    const { data } = await supa.from('qt_settings').select('value').eq('key', 'default_signature').maybeSingle();
+    if (data?.value) localStorage.setItem(QT_DEFAULT_SIG_KEY, data.value);
+  } catch (e) { /* keep local */ }
 }
 
 function qtRenderSignature() {
@@ -2794,42 +2904,70 @@ function qtLoadRecords() {
   }
   if (migrated) qtPersistRecords();
 }
-// Cross-device sync helpers. Bridge offline → no-ops, local stays as-is.
+// Cross-device sync helpers. Bridge offline → tries Supabase tables.
 let __qtPushTimer = null;
 function qtPushRecordsToBridge() {
   // Debounce so a flurry of edits in one second only triggers one push.
   clearTimeout(__qtPushTimer);
   __qtPushTimer = setTimeout(async () => {
+    // Try the bridge first
     try {
       const json = JSON.stringify(QUOTATIONS);
-      // UTF-8 safe base64
       const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
-      await qtFetch('/api/save', {
+      const ok = await qtFetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: QT_RECORDS_PATH, contentBase64: b64 }),
       });
-    } catch (e) { console.warn('[qt] records push failed', e); }
+      if (ok?.ok) return;
+    } catch (e) { /* fall through */ }
+    // Bridge unavailable → upsert each record into qt_records on Supabase.
+    if (!USE_SUPABASE) return;
+    try {
+      const rows = QUOTATIONS.map(q => ({
+        id: q.id,
+        customer: q.customer || null,
+        data: q,
+        updated_at: new Date(q.updatedAt || Date.now()).toISOString(),
+      }));
+      if (rows.length) await supa.from('qt_records').upsert(rows, { onConflict: 'id' });
+    } catch (e) { console.warn('[qt] supabase records push failed', e); }
   }, 600);
 }
 async function qtPullRecordsFromBridge() {
+  // Try the bridge first
   try {
     const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_RECORDS_PATH));
-    if (!r.ok) return; // file not yet uploaded by any device
-    const remote = await r.json();
-    if (!Array.isArray(remote)) return;
-    // Merge by id, keeping whichever side has the higher updatedAt. Records
-    // present locally but missing on server are dropped (server is the
-    // source of truth — needed so deletes from any device propagate).
+    if (r.ok) {
+      const remote = await r.json();
+      if (Array.isArray(remote)) {
+        const byId = {};
+        for (const r of remote) byId[r.id] = r;
+        for (const local of QUOTATIONS) {
+          const srv = byId[local.id];
+          if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byId[local.id] = local;
+        }
+        QUOTATIONS = Object.values(byId);
+        try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
+        return;
+      }
+    }
+  } catch (e) { /* fall through */ }
+  // Bridge offline → pull from Supabase qt_records.
+  if (!USE_SUPABASE) return;
+  try {
+    const { data, error } = await supa.from('qt_records').select('id,data,updated_at');
+    if (error) { console.warn('[qt] supabase pull error', error); return; }
+    if (!Array.isArray(data)) return;
     const byId = {};
-    for (const r of remote) byId[r.id] = r;
+    for (const row of data) if (row.data) byId[row.id] = row.data;
     for (const local of QUOTATIONS) {
       const srv = byId[local.id];
       if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byId[local.id] = local;
     }
     QUOTATIONS = Object.values(byId);
     try { localStorage.setItem(QT_LS_KEY, JSON.stringify(QUOTATIONS)); } catch(e) {}
-  } catch (e) { /* offline or invalid JSON; keep local */ }
+  } catch (e) { /* keep local */ }
 }
 
 // ── Customer profile DB ───────────────────────────────────────────────────
@@ -2847,26 +2985,55 @@ let __qtCustPushTimer = null;
 function qtPushCustomerProfilesToBridge() {
   clearTimeout(__qtCustPushTimer);
   __qtCustPushTimer = setTimeout(async () => {
+    // Try the bridge first
     try {
       const json = JSON.stringify(QT_CUSTOMER_PROFILES);
       const b64 = btoa(String.fromCharCode(...new TextEncoder().encode(json)));
-      await qtFetch('/api/save', {
+      const ok = await qtFetch('/api/save', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ path: QT_CUSTOMERS_PATH, contentBase64: b64 }),
       });
-    } catch (e) { console.warn('[qt] customers push failed', e); }
+      if (ok?.ok) return;
+    } catch (e) { /* fall through */ }
+    // Fall back to Supabase qt_customer_profiles
+    if (!USE_SUPABASE) return;
+    try {
+      const rows = QT_CUSTOMER_PROFILES.map(p => ({
+        name: p.name, data: p,
+        updated_at: new Date(p.updatedAt || Date.now()).toISOString(),
+      }));
+      if (rows.length) await supa.from('qt_customer_profiles').upsert(rows, { onConflict: 'name' });
+    } catch (e) { console.warn('[qt] supabase customer push failed', e); }
   }, 600);
 }
 async function qtPullCustomerProfilesFromBridge() {
+  // Try the bridge first
   try {
     const r = await fetch(QT_BRIDGE + '/api/file?path=' + encodeURIComponent(QT_CUSTOMERS_PATH));
-    if (!r.ok) return;
-    const remote = await r.json();
-    if (!Array.isArray(remote)) return;
-    // Merge by name, newer updatedAt wins
+    if (r.ok) {
+      const remote = await r.json();
+      if (Array.isArray(remote)) {
+        const byName = {};
+        for (const p of remote) if (p && p.name) byName[p.name] = p;
+        for (const local of QT_CUSTOMER_PROFILES) {
+          const srv = byName[local.name];
+          if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byName[local.name] = local;
+          else if (!srv) byName[local.name] = local;
+        }
+        QT_CUSTOMER_PROFILES = Object.values(byName);
+        try { localStorage.setItem(QT_CUSTOMERS_LS, JSON.stringify(QT_CUSTOMER_PROFILES)); } catch(e) {}
+        return;
+      }
+    }
+  } catch (e) { /* fall through */ }
+  // Fall back to Supabase
+  if (!USE_SUPABASE) return;
+  try {
+    const { data } = await supa.from('qt_customer_profiles').select('name,data');
+    if (!Array.isArray(data)) return;
     const byName = {};
-    for (const p of remote) if (p && p.name) byName[p.name] = p;
+    for (const row of data) if (row.data) byName[row.name] = row.data;
     for (const local of QT_CUSTOMER_PROFILES) {
       const srv = byName[local.name];
       if (srv && (local.updatedAt || 0) > (srv.updatedAt || 0)) byName[local.name] = local;
@@ -2874,7 +3041,7 @@ async function qtPullCustomerProfilesFromBridge() {
     }
     QT_CUSTOMER_PROFILES = Object.values(byName);
     try { localStorage.setItem(QT_CUSTOMERS_LS, JSON.stringify(QT_CUSTOMER_PROFILES)); } catch(e) {}
-  } catch (e) { /* offline / no file yet */ }
+  } catch (e) { /* keep local */ }
 }
 // Look up a stored profile by exact customer name. Returns null if missing.
 function qtFindCustomerProfile(name) {
@@ -3470,23 +3637,31 @@ async function qtGeneratePdf(q) {
   const projName = qtProjectFolderName(q);
   const safeDoc  = q.docType.replace(/\s+/g,'');
   const filename = `${qtDocNoFor(q, q.docType)}_${safeDoc}_${q.date || todayISO()}.pdf`;
+  const fullPath = `${safeCust}/${projName}/${filename}`;
   const result = await qtFetch('/api/save', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ path: `${safeCust}/${projName}/${filename}`, contentBase64: b64 }),
+    body: JSON.stringify({ path: fullPath, contentBase64: b64 }),
   });
   if (result?.ok) {
     if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
     console.log('[qt] PDF saved to', result.path, '·', result.size, 'bytes');
     return result.path;
-  } else {
-    // Browser-only fallback (e.g. page hosted on GitHub Pages with no bridge):
-    // download the PDF directly to the user's Downloads folder.
-    qtDownloadBlob(blob, filename);
-    if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
-    showToast('No bridge — PDF downloaded to your device');
-    return null;
   }
+  // Bridge offline → upload to Supabase Storage so any device can fetch it.
+  if (USE_SUPABASE) {
+    const cloud = await qtSupaSavePdf(fullPath, blob);
+    if (cloud) {
+      if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+      showToast('PDF uploaded to cloud storage');
+      return cloud;
+    }
+  }
+  // Last resort: download to the device.
+  qtDownloadBlob(blob, filename);
+  if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+  showToast('No bridge / cloud — PDF downloaded to your device');
+  return null;
 }
 
 // Trigger a browser download for a generated blob (PDF). Used when the
