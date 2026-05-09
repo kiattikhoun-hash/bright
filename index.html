@@ -1664,11 +1664,20 @@ function renderTeam() {
    all generate from the same JSON record. PDFs are written to the local
    bridge (which writes to the synced Synology Drive folder).
 */
-// The web app tries each of these URLs in order until one responds. This
-// covers the common cause of "Bridge offline" on Windows where the browser
-// fails to resolve 127.0.0.1 due to a hosts-file quirk but `localhost` works
-// (or vice versa). The first URL that succeeds is sticky for the session.
-const QT_BRIDGE_CANDIDATES = ['http://127.0.0.1:7860', 'http://localhost:7860'];
+// Where to talk to the Quotation Bridge.
+//   • If this page was served from the bridge itself (http://mac-ip:7860/),
+//     window.location.origin already points at it — use that. This is the
+//     "Mac is the host, other devices just open a browser" topology.
+//   • Otherwise (file:// or some other dev host) fall back to the loopback
+//     candidates. The first URL that responds wins for the session.
+const QT_BRIDGE_CANDIDATES = (() => {
+  const o = window.location.origin || '';
+  if (/^https?:/.test(o) && !o.startsWith('http://localhost') && !o.startsWith('http://127.')) {
+    // Page came from a real http origin — assume that's the bridge
+    return [o];
+  }
+  return ['http://127.0.0.1:7860', 'http://localhost:7860'];
+})();
 let QT_BRIDGE = QT_BRIDGE_CANDIDATES[0];
 let qtBridgeError = ''; // last error message, surfaced in the status pill
 const QT_DOC_TYPES = ['Quotation','Invoice','Delivery Note','Receipt'];
@@ -3107,13 +3116,13 @@ async function qtGeneratePdf(q) {
   fill(AMBER); pdf.rect(ML, y + BAR_H, CW * 0.35, 0.8, 'F');
   fill(NAVY);  pdf.rect(ML + CW * 0.35, y + BAR_H, CW * 0.65, 0.8, 'F');
 
-  // Bright logo at its fixed dimensions — does NOT shrink with the navy bar.
-  // Vertically centred relative to the bar, so it overflows above and below
-  // by a few mm. The SVG bg is navy so the overflow blends into the page.
+  // Bright logo sized to fit inside the navy bar (with 1 mm padding top
+  // and bottom). Width scaled to preserve the original 41 : 11 aspect ratio.
   try {
-    const LOGO_W = 41, LOGO_H = 11;
+    const LOGO_H = BAR_H - 2;             // 1 mm padding above & below
+    const LOGO_W = 41 * (LOGO_H / 11);    // keep aspect ratio
     const logoPng = await qtLoadLogoPng(LOGO_W, LOGO_H);
-    pdf.addImage(logoPng, 'PNG', ML + 1, y + (BAR_H - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
+    pdf.addImage(logoPng, 'PNG', ML + 1, y + 1, LOGO_W, LOGO_H, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
 
   y += BAR_H + 6; // bar + accent + small gap before hero band
@@ -3315,8 +3324,19 @@ async function qtGeneratePdf(q) {
     pdf.text('GRAND TOTAL', totX + 3, y + 17.5);
     font(7, 'normal', [203, 213, 225]);
     pdf.text(q.currency, totX + 3, y + 21);
-    font(13, 'bold', [255,255,255]);
-    pdf.text(qtFmtAmount(t.grand, q.currency), totX + totW - 3, y + 21, { align: 'right' });
+    // Auto-shrink the amount font if a very long number would otherwise
+    // overlap the GRAND TOTAL label on the left.
+    const amtStr = qtFmtAmount(t.grand, q.currency);
+    let amtPt = 13;
+    font(amtPt, 'bold', [255,255,255]);
+    const labelWidth = pdf.getTextWidth('GRAND TOTAL');
+    const available = totW - 6 - labelWidth - 4; // 3 mm padding each side + 4 mm gap
+    const amtW = pdf.getTextWidth(amtStr) || 1;
+    if (amtW > available) {
+      amtPt = Math.max(7, amtPt * (available / amtW));
+      font(amtPt, 'bold', [255,255,255]);
+    }
+    pdf.text(amtStr, totX + totW - 3, y + 21, { align: 'right' });
 
     y += 30;
   }
@@ -3344,12 +3364,11 @@ async function qtGeneratePdf(q) {
   }
   if (q.notes)    tcLines.push('* ' + q.notes);
 
-  // T&C: text size back to 8 pt (original), but the box itself is bigger —
-  // more padding + extra line spacing so the bullets sit roomier inside.
+  // T&C: 8 pt text, box height auto-fits the wrapped lines (no extra space).
   const tcLabelH  = 5;
-  const tcBoxPad  = 8;    // was 4 → doubled for a bigger box
-  const TC_FONT   = 8;    // back to original size
-  const tcLineH   = 6.5;  // was 4.2 → ~50% more vertical breathing room
+  const tcBoxPad  = 4;
+  const TC_FONT   = 8;
+  const tcLineH   = 5.0;  // tight to the text size — auto-fits exact rows
   const wrapped = tcLines.map(l => pdf.splitTextToSize('• ' + l.replace(/^\*\s*/, ''), CW - tcBoxPad * 2));
   const tcBoxH = tcBoxPad * 2 + wrapped.reduce((n, ls) => n + ls.length, 0) * tcLineH;
 
