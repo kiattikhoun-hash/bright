@@ -1887,9 +1887,12 @@ function renderQuotations() {
       ${rows}`;
   }).join('');
 
+  const onPublicHost = /^https:/.test(window.location.origin);
   const bridgeStatus = qtBridgeOk
     ? `<span class="qt-bridge-status ok" title="${QT_BRIDGE}">● Bridge connected (${QT_BRIDGE.replace('http://','')})</span>`
-    : `<span class="qt-bridge-status err" title="${(qtBridgeError||'').replace(/"/g,'&quot;')}">● Bridge offline${qtBridgeError ? ' — '+qtBridgeError.replace(/^https?:\/\//,'').slice(0,80) : ''} <a href="http://127.0.0.1:7860/api/health" target="_blank" style="color:inherit;text-decoration:underline;margin-left:6px;">test ↗</a></span>`;
+    : onPublicHost
+      ? `<span class="qt-bridge-status err" style="background:#fde68a;color:#92400e;" title="No bridge available — running in browser-only mode. PDFs will download to your device; records are stored locally only.">● Browser-only mode (PDFs download to device)</span>`
+      : `<span class="qt-bridge-status err" title="${(qtBridgeError||'').replace(/"/g,'&quot;')}">● Bridge offline${qtBridgeError ? ' — '+qtBridgeError.replace(/^https?:\/\//,'').slice(0,80) : ''} <a href="http://127.0.0.1:7860/api/health" target="_blank" style="color:inherit;text-decoration:underline;margin-left:6px;">test ↗</a></span>`;
 
   const displayPanel = qtSelectedFile ? `
     <div class="panel" style="margin-bottom:14px;">
@@ -3477,10 +3480,24 @@ async function qtGeneratePdf(q) {
     console.log('[qt] PDF saved to', result.path, '·', result.size, 'bytes');
     return result.path;
   } else {
-    showToast('Bridge offline — PDF could not be saved');
-    console.error('[qt] save failed — is the bridge running on :7860?');
+    // Browser-only fallback (e.g. page hosted on GitHub Pages with no bridge):
+    // download the PDF directly to the user's Downloads folder.
+    qtDownloadBlob(blob, filename);
+    if (!q.generated.includes(q.docType)) q.generated.push(q.docType);
+    showToast('No bridge — PDF downloaded to your device');
     return null;
   }
+}
+
+// Trigger a browser download for a generated blob (PDF). Used when the
+// page is hosted somewhere with no bridge (GitHub Pages, etc.).
+function qtDownloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
 
 function blobToBase64(blob) {
