@@ -3107,11 +3107,11 @@ async function qtGeneratePdf(q) {
   fill(AMBER); pdf.rect(ML, y + BAR_H, CW * 0.35, 0.8, 'F');
   fill(NAVY);  pdf.rect(ML + CW * 0.35, y + BAR_H, CW * 0.65, 0.8, 'F');
 
-  // Bright logo on the left side of the navy bar — scaled to half the bar
-  // height (so it stays vertically centred at the new ~8 mm height).
+  // Bright logo at its fixed dimensions — does NOT shrink with the navy bar.
+  // Vertically centred relative to the bar, so it overflows above and below
+  // by a few mm. The SVG bg is navy so the overflow blends into the page.
   try {
-    const LOGO_H = 5.5;                      // was 11 mm
-    const LOGO_W = 41 * (LOGO_H / 11);       // keep aspect ratio
+    const LOGO_W = 41, LOGO_H = 11;
     const logoPng = await qtLoadLogoPng(LOGO_W, LOGO_H);
     pdf.addImage(logoPng, 'PNG', ML + 1, y + (BAR_H - LOGO_H) / 2, LOGO_W, LOGO_H, undefined, 'FAST');
   } catch (e) { console.warn('[qt] logo load failed', e); }
@@ -3119,8 +3119,15 @@ async function qtGeneratePdf(q) {
   y += BAR_H + 6; // bar + accent + small gap before hero band
 
   // ── 2. Hero band: doc-type heading + meta cards ─────────────────────────
-  font(7, 'bold', AMBER);
-  pdf.text('BRIGHT PRODUCTION & PRINTING', ML, y);
+  // Auto-size the BRIGHT PRODUCTION & PRINTING heading so its rendered width
+  // matches the amber accent strip beneath the navy bar (CW * 0.35).
+  const heading = 'BRIGHT PRODUCTION & PRINTING';
+  const targetW = CW * 0.35;
+  font(10, 'bold', AMBER); // probe size
+  const probeW = pdf.getTextWidth(heading) || 1;
+  const headingPt = Math.max(7, Math.min(28, 10 * (targetW / probeW)));
+  font(headingPt, 'bold', AMBER);
+  pdf.text(heading, ML, y);
   font(20, 'bold', NAVY);
   pdf.text(q.docType.toUpperCase(), ML, y + 8);
 
@@ -3154,15 +3161,10 @@ async function qtGeneratePdf(q) {
 
   y += 14;
 
-  // ── 3. Customer card (white background, thin border, 2-col grid) ─────────
-  const custH = 28;
-  stroke([226, 232, 240]); fill([255,255,255]);
-  pdf.setLineWidth(0.2);
-  pdf.roundedRect(ML, y, CW, custH, 2, 2, 'FD');
-
-  font(8, 'bold', MUTE);
-  pdf.text('BILL TO', ML + 4, y + 4.5);
-
+  // ── 3. Customer card (white bg, thin border, 2-col grid) ─────────────────
+  // Card height + per-row spacing are computed dynamically so a long address
+  // / contact-person / email that wraps onto a 2nd line doesn't collide with
+  // the row below it.
   const colW = (CW - 12) / 2;
   const fields = [
     ['CUSTOMER', q.customer || '—', 'PROJECT', q.project || '—'],
@@ -3170,19 +3172,39 @@ async function qtGeneratePdf(q) {
     ['OFFICE NUMBER', q.officeNumber || '—', 'CONTACT NUMBER', q.contactNumber || '—'],
     ['EMAIL', q.email || '—', '', ''],
   ];
-  let fy = y + 9;
-  for (const [l1, v1, l2, v2] of fields) {
+  const VAL_LINE_H = 3.5;     // mm per wrapped value line at 8.5 pt
+  const ROW_LABEL_GAP = 3;    // label-to-value gap
+  const ROW_BOTTOM_PAD = 1.8; // gap before the next row
+  // Pre-compute each value's wrapped text so we know the row's actual height.
+  const rows = fields.map(([l1, v1, l2, v2]) => {
+    const lines1 = pdf.splitTextToSize(v1 || '—', colW - 4);
+    const lines2 = l2 ? pdf.splitTextToSize(v2 || '—', colW - 4) : [];
+    const tallest = Math.max(lines1.length, lines2.length || 1);
+    return { l1, l2, lines1, lines2, h: ROW_LABEL_GAP + tallest * VAL_LINE_H + ROW_BOTTOM_PAD };
+  });
+  const HEAD_BAND = 7;        // space taken by "BILL TO" header + top padding
+  const custH = HEAD_BAND + rows.reduce((n, r) => n + r.h, 0) + 2;
+
+  stroke([226, 232, 240]); fill([255,255,255]);
+  pdf.setLineWidth(0.2);
+  pdf.roundedRect(ML, y, CW, custH, 2, 2, 'FD');
+
+  font(8, 'bold', MUTE);
+  pdf.text('BILL TO', ML + 4, y + 4.5);
+
+  let fy = y + HEAD_BAND + 2;
+  for (const r of rows) {
     font(7, 'bold', MUTE);
-    pdf.text(l1, ML + 4, fy);
+    pdf.text(r.l1, ML + 4, fy);
     font(8.5, 'bold', NAVY);
-    pdf.text(pdf.splitTextToSize(v1, colW - 4), ML + 4, fy + 3);
-    if (l2) {
+    pdf.text(r.lines1, ML + 4, fy + ROW_LABEL_GAP);
+    if (r.l2) {
       font(7, 'bold', MUTE);
-      pdf.text(l2, ML + 4 + colW + 4, fy);
+      pdf.text(r.l2, ML + 4 + colW + 4, fy);
       font(8.5, 'bold', NAVY);
-      pdf.text(pdf.splitTextToSize(v2, colW - 4), ML + 4 + colW + 4, fy + 3);
+      pdf.text(r.lines2, ML + 4 + colW + 4, fy + ROW_LABEL_GAP);
     }
-    fy += 4.8;
+    fy += r.h;
   }
 
   y += custH + 4;
@@ -3322,12 +3344,12 @@ async function qtGeneratePdf(q) {
   }
   if (q.notes)    tcLines.push('* ' + q.notes);
 
-  // Compute T&C block height — text bumped 50% so the bullets are easier to
-  // read at A4 print scale.
-  const tcLabelH = 5;
-  const tcBoxPad = 4;
-  const TC_FONT  = 12;   // was 8 → +50%
-  const tcLineH  = 6.3;  // was 4.2 → matches the bigger font line height
+  // T&C: text size back to 8 pt (original), but the box itself is bigger —
+  // more padding + extra line spacing so the bullets sit roomier inside.
+  const tcLabelH  = 5;
+  const tcBoxPad  = 8;    // was 4 → doubled for a bigger box
+  const TC_FONT   = 8;    // back to original size
+  const tcLineH   = 6.5;  // was 4.2 → ~50% more vertical breathing room
   const wrapped = tcLines.map(l => pdf.splitTextToSize('• ' + l.replace(/^\*\s*/, ''), CW - tcBoxPad * 2));
   const tcBoxH = tcBoxPad * 2 + wrapped.reduce((n, ls) => n + ls.length, 0) * tcLineH;
 
@@ -3340,7 +3362,7 @@ async function qtGeneratePdf(q) {
   // T&C box: white background, just the amber side accent for visual emphasis.
   fill(AMBER); pdf.rect(ML, y, 1.2, tcBoxH, 'F');
 
-  let tx = y + tcBoxPad + TC_FONT * 0.35; // baseline offset for the bigger font
+  let tx = y + tcBoxPad + TC_FONT * 0.35;
   font(TC_FONT, 'normal', [71, 85, 105]);
   for (const lines of wrapped) {
     for (const line of lines) {
