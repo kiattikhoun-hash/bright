@@ -3141,12 +3141,12 @@ async function qtGeneratePdf(q) {
     cx -= w;
     if (m.inverted) {
       fill(NAVY); pdf.roundedRect(cx, y - 3, w, cardH, 1.2, 1.2, 'F');
-      font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
+      font(7, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
       font(8.5, 'bold', [255,255,255]); pdf.text(m.value, cx + 2, y + 4.5);
     } else {
       stroke([226, 232, 240]); fill([255,255,255]);
       pdf.roundedRect(cx, y - 3, w, cardH, 1.2, 1.2, 'FD');
-      font(5.5, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
+      font(7, 'bold', MUTE); pdf.text(m.label, cx + 2, y);
       font(8.5, 'bold', TEXT); pdf.text(m.value, cx + 2, y + 4.5);
     }
     cx -= cardGap;
@@ -3160,7 +3160,7 @@ async function qtGeneratePdf(q) {
   pdf.setLineWidth(0.2);
   pdf.roundedRect(ML, y, CW, custH, 2, 2, 'FD');
 
-  font(6, 'bold', MUTE);
+  font(8, 'bold', MUTE);
   pdf.text('BILL TO', ML + 4, y + 4.5);
 
   const colW = (CW - 12) / 2;
@@ -3172,12 +3172,12 @@ async function qtGeneratePdf(q) {
   ];
   let fy = y + 9;
   for (const [l1, v1, l2, v2] of fields) {
-    font(5.5, 'bold', MUTE);
+    font(7, 'bold', MUTE);
     pdf.text(l1, ML + 4, fy);
     font(8.5, 'bold', NAVY);
     pdf.text(pdf.splitTextToSize(v1, colW - 4), ML + 4, fy + 3);
     if (l2) {
-      font(5.5, 'bold', MUTE);
+      font(7, 'bold', MUTE);
       pdf.text(l2, ML + 4 + colW + 4, fy);
       font(8.5, 'bold', NAVY);
       pdf.text(pdf.splitTextToSize(v2, colW - 4), ML + 4 + colW + 4, fy + 3);
@@ -3268,7 +3268,9 @@ async function qtGeneratePdf(q) {
   // totals block (subtotal / VAT / grand total) so the doc stays clean.
   if (q.docType !== 'Delivery Note') {
     pageBreakIfNeeded(28);
-    const totW = 70;
+    // Totals box widened 50% (70 → 105 mm) so GRAND TOTAL has room to breathe
+    // for large amounts (e.g. multi-million LAK figures).
+    const totW = 105;
     const totX = ML + CW - totW;
     const t = qtTotals(q);
 
@@ -3287,9 +3289,9 @@ async function qtGeneratePdf(q) {
     pdf.text(qtFmtAmount(t.vat, q.currency), totX + totW - 2, y + 9.5, { align: 'right' });
 
     fill(NAVY); pdf.roundedRect(totX, y + 13, totW, 13, 2, 2, 'F');
-    font(5.5, 'bold', MUTE);
+    font(7, 'bold', MUTE);
     pdf.text('GRAND TOTAL', totX + 3, y + 17.5);
-    font(6, 'normal', [203, 213, 225]);
+    font(7, 'normal', [203, 213, 225]);
     pdf.text(q.currency, totX + 3, y + 21);
     font(13, 'bold', [255,255,255]);
     pdf.text(qtFmtAmount(t.grand, q.currency), totX + totW - 3, y + 21, { align: 'right' });
@@ -3320,24 +3322,26 @@ async function qtGeneratePdf(q) {
   }
   if (q.notes)    tcLines.push('* ' + q.notes);
 
-  // Compute T&C block height
+  // Compute T&C block height — text bumped 50% so the bullets are easier to
+  // read at A4 print scale.
   const tcLabelH = 5;
   const tcBoxPad = 4;
-  const tcLineH = 4.2;
+  const TC_FONT  = 12;   // was 8 → +50%
+  const tcLineH  = 6.3;  // was 4.2 → matches the bigger font line height
   const wrapped = tcLines.map(l => pdf.splitTextToSize('• ' + l.replace(/^\*\s*/, ''), CW - tcBoxPad * 2));
   const tcBoxH = tcBoxPad * 2 + wrapped.reduce((n, ls) => n + ls.length, 0) * tcLineH;
 
   pageBreakIfNeeded(tcLabelH + 2 + tcBoxH);
 
-  font(6, 'bold', MUTE);
+  font(8, 'bold', MUTE);
   pdf.text('TERMS & CONDITIONS', ML, y + 3);
   y += tcLabelH;
 
   // T&C box: white background, just the amber side accent for visual emphasis.
   fill(AMBER); pdf.rect(ML, y, 1.2, tcBoxH, 'F');
 
-  let tx = y + tcBoxPad + 2.5;
-  font(8, 'normal', [71, 85, 105]);
+  let tx = y + tcBoxPad + TC_FONT * 0.35; // baseline offset for the bigger font
+  font(TC_FONT, 'normal', [71, 85, 105]);
   for (const lines of wrapped) {
     for (const line of lines) {
       pdf.text(line, ML + tcBoxPad, tx);
@@ -3347,9 +3351,9 @@ async function qtGeneratePdf(q) {
   y += tcBoxH + 8;
 
   // ── 7. Signatures ────────────────────────────────────────────────────────
-  // Even bigger signing area — 44 mm (2× the previous 22 mm) so a full
+  // Signature area: 57 mm tall (44 mm × 1.3 — 30% bigger) so a full
   // signature image plus a wet-ink stamp can sit comfortably above the line.
-  const SIG_BOX_H = 44;
+  const SIG_BOX_H = 57;
   pageBreakIfNeeded(SIG_BOX_H + 12);
   const sigLeft  = q.docType === 'Quotation' ? 'APPROVED BY'
                   : q.docType === 'Receipt'  ? 'RECEIVED BY'
@@ -3374,7 +3378,7 @@ async function qtGeneratePdf(q) {
   stroke(TEXT); pdf.setLineWidth(0.4);
   pdf.line(ML, sigLineY, ML + sigW, sigLineY);
   pdf.line(ML + sigW + 12, sigLineY, ML + CW, sigLineY);
-  font(5.5, 'bold', MUTE);
+  font(7, 'bold', MUTE);
   pdf.text(sigLeft, ML, sigLineY + 4);
   pdf.text('PREPARED BY', ML + sigW + 12, sigLineY + 4);
   font(8, 'bold', NAVY);
